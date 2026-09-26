@@ -1,0 +1,48 @@
+name: validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The append-only check compares receipts.json against the base
+          # commit, so the history has to be there to compare against.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -v
+
+      - name: End-to-end acceptance run
+        run: python3 e2e_check.py
+
+      - name: Validate the tree (secret gate, prices, addresses, states)
+        run: python3 validate.py --no-write-stats
+
+      - name: Append-only check against the base commit
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python3 validate.py --base "$BASE_SHA" --no-write-stats
+
+      - name: stats.json must match what validate.py generates
+        run: |
+          cp stats.json /tmp/stats.committed.json
+          python3 validate.py
+          diff -u /tmp/stats.committed.json stats.json \
+            || { echo "stats.json is stale; run 'python3 validate.py' and commit the result"; exit 1; }

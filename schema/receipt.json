@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schema/receipt.json",
+  "title": "One settlement on the paid work queue",
+  "description": "Append-only. A commit that removes or edits an existing receipt fails CI.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "job_id", "paid_to", "amount_raw", "amount_xno",
+               "block_hash", "settled_at", "delivery_url", "verify"],
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "job_id": {"type": "string", "minLength": 1},
+    "paid_to": {
+      "type": "string",
+      "pattern": "^(nano|xrb)_[13][13456789abcdefghijkmnopqrstuwxyz]{59}$",
+      "description": "Checksum-validated by validate.py before merge; the pattern alone is not sufficient."
+    },
+    "amount_raw": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+    "amount_xno": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]{1,30})?$"},
+    "block_hash": {
+      "type": "string", "pattern": "^[0-9A-F]{64}$",
+      "description": "The only field in this repository permitted to hold 64 hex characters."
+    },
+    "settled_at": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"},
+    "delivery_url": {"type": "string", "minLength": 1},
+    "verify": {"type": "string", "minLength": 1}
+  }
+}
