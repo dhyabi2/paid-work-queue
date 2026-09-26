@@ -54,7 +54,7 @@ python3 -m unittest discover -s tests     # the test suite
 python3 e2e_check.py                      # the end-to-end acceptance run
 ```
 
-Python 3.8+, standard library only, no network access at any point.
+Python 3.10+, standard library only, no network access at any point.
 `vendor/nanoaddr.py` and `vendor/money.py` are copied verbatim from `tools/nano_wallet`
 in [dhyabi2/swarm-decisions](https://github.com/dhyabi2/swarm-decisions); they are
 vendored so this repository has no dependencies at all.
