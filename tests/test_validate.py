@@ -344,6 +344,20 @@ class ErrorPaths(TreeCase):
         for bad in ("2026-09-26", "2026-09-26T06:00:00+00:00", "2026-13-01T00:00:00Z", None):
             self.assertTrue(check_jobs(jobs_doc(job(posted=bad))), bad)
 
+    def test_impossible_calendar_dates(self):
+        # A day that does not exist in that month is not a timestamp. The
+        # pattern and the 1..31 range both pass it, so only a real calendar
+        # check catches it.
+        for bad in ("2026-02-31T00:00:00Z", "2026-02-29T00:00:00Z",
+                    "2026-04-31T00:00:00Z", "2026-06-31T00:00:00Z"):
+            self.assertIsNone(validate._rfc3339(bad), bad)
+            self.assertTrue(check_jobs(jobs_doc(job(posted=bad))), bad)
+
+    def test_real_dates_including_a_leap_day_are_accepted(self):
+        for good in ("2024-02-29T00:00:00Z", "2026-01-31T23:59:59Z",
+                     "2026-12-31T23:59:60Z"):
+            self.assertIsNotNone(validate._rfc3339(good), good)
+
     def test_unreadable_and_malformed_files(self):
         root = tempfile.mkdtemp()
         code, output = self.run_tree(root)

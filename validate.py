@@ -22,6 +22,7 @@ failure otherwise. Each failure names the entry it is about.
 """
 
 import argparse
+import datetime
 import json
 import os
 import re
@@ -124,7 +125,12 @@ def _rfc3339(value):
     if not match:
         return None
     year, month, day, hour, minute, second = (int(g) for g in match.groups())
-    if not (1 <= month <= 12 and 1 <= day <= 31):
+    try:
+        # A real calendar check, not a 1..31 range: 2026-02-31 matches the
+        # pattern and is inside the range, but it is not a date, and a public
+        # ledger should not carry a job that expires on a day that never comes.
+        datetime.date(year, month, day)
+    except ValueError:
         return None
     if hour > 23 or minute > 59 or second > 60:
         return None
