@@ -34,6 +34,7 @@ import nanoaddr  # noqa: E402
 import nanonode  # noqa: E402
 import validate  # noqa: E402
 from claim import format_xno  # noqa: E402  - one renderer for money, not two
+from canonical import same_account, same_amount  # noqa: E402  - one comparison, not three
 
 JOBS_FILE = "jobs.json"
 RECEIPTS_FILE = "receipts.json"
@@ -235,14 +236,21 @@ def interrogate(node, node_url, block_hash, job, job_id, address):
 
     contents = answer.get("contents") or {}
     destination = contents.get("link_as_account")
-    if destination != address:
+    # By account, not by spelling. The node answers the `nano_` form; the job
+    # carries whatever the claimant typed, which for older tooling is the `xrb_`
+    # form of that very same account. Comparing the two strings refused a
+    # payment that had arrived in full - and the buyer's money had already moved.
+    if not same_account(destination, address):
         raise Refused(
             EXIT_MISMATCH,
             "block %s paid %s, but job %s is owed %s - refusing"
             % (block_hash, destination, job_id, address))
     amount = str(answer.get("amount"))
     expected = str(job["price_raw"])
-    if amount != expected:
+    # Raw is an integer: "0500" and "500" are one amount, and a padded price
+    # reaches here because validate.py admits one. A non-integer on either side
+    # refuses, so this is no weaker than the string comparison it replaces.
+    if not same_amount(amount, expected):
         raise Refused(
             EXIT_MISMATCH,
             "block %s paid %s raw, job %s is priced at %s raw - refusing"

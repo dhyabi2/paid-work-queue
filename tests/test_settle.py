@@ -33,7 +33,12 @@ import settle  # noqa: E402
 SELLER = "nano_3t6k35gi95xu6tergt6p69ck76ogmitsa8mnijtpxm9fkcm736xtoncuohr3"
 STRANGER = "nano_1111111111111111111111111111111111111111111111111111hifc8npp"
 
+# The same account as SELLER in the spelling that predates the 2018 rename: the
+# 60 characters after the prefix are identical, so this is not a second account.
+SELLER_XRB = "xrb_3t6k35gi95xu6tergt6p69ck76ogmitsa8mnijtpxm9fkcm736xtoncuohr3"
+
 PRICE_RAW = "250000000000000000000000000000"      # 0.25 XNO
+PADDED_PRICE_RAW = "0250000000000000000000000000000"   # the same 0.25 XNO, padded
 PRICE_XNO = "0.25"
 FUTURE = "2099-10-03T07:00:00Z"
 FROZEN = "2026-09-27T06:20:00Z"
@@ -85,7 +90,7 @@ def send_block(destination=SELLER, amount=PRICE_RAW, confirmed="true", subtype="
     }
 
 
-class SettleTests(unittest.TestCase):
+class SettleFixture(unittest.TestCase):
     def setUp(self):
         self.fresh_dir()
         self._real_now = settle.now_utc
@@ -106,8 +111,13 @@ class SettleTests(unittest.TestCase):
         refuses when it cannot - so the fixture has to look like the thing a
         seller actually has, which is a clone with that ref.
         """
-        for name in ("validate.py", "claim.py", "settle.py", "nanonode.py", "e2e_check.py"):
-            shutil.copy(os.path.join(ROOT, name), os.path.join(self.dir, name))
+        # Every top-level module, not a hand-kept list of five: the list went
+        # stale the first time a module was added, and the failure it produced
+        # was a ModuleNotFoundError inside a subprocess, which reads as a broken
+        # fixture rather than as the missing file it is.
+        for name in sorted(os.listdir(ROOT)):
+            if name.endswith(".py"):
+                shutil.copy(os.path.join(ROOT, name), os.path.join(self.dir, name))
         shutil.copytree(os.path.join(ROOT, "vendor"), os.path.join(self.dir, "vendor"))
         self.write_json("jobs.json", {"updated": "2026-09-26T07:00:00Z",
                                       "currency": "XNO", "jobs": list(jobs)})
@@ -169,6 +179,10 @@ class SettleTests(unittest.TestCase):
         return self.run_settle(job_id, "--block-hash", block_hash(hash_seed),
                                "--delivery-url", "https://example.invalid/work",
                                "--node", "https://node.invalid/proxy", *extra, node=node)
+
+
+class SettleTests(SettleFixture):
+    """The thirteen numbered tests the spec names, plus the checks around them."""
 
     # -- 1 ------------------------------------------------------------------
     def test_01_happy_path_appends_one_receipt_and_moves_every_counter(self):
@@ -557,6 +571,71 @@ class SettleTests(unittest.TestCase):
         node = self.good_node()
         self.assertEqual(self.settle_ok(node=node)[0], 0)
         self.assertEqual(len(node.calls), 1, node.calls)
+
+
+class Spellings(SettleFixture):
+    """One account, two spellings; one amount, two spellings.
+
+    Every case here fails SAFE against the old code - it refuses a payment that
+    arrived - which is why 83 green tests never saw any of it: not one fixture
+    used the legacy prefix or a padded amount. By the time the refusal happens
+    the buyer's money has irreversibly moved, so it costs the seller the receipt
+    for money they were actually paid.
+    """
+
+    def test_a_claim_in_the_legacy_spelling_still_settles(self):
+        """The bug: the block paid this account, and settle.py said it did not."""
+        self.tree([job(payout_address=SELLER_XRB)])
+        code, _, err = self.settle_ok(node=self.good_node(destination=SELLER))
+        self.assertEqual(code, 0, err)
+        receipts = json.loads(self.bytes_of("receipts.json"))["receipts"]
+        self.assertEqual(len(receipts), 1)
+        self.assertIs(receipts[0]["confirmed"], True)
+
+    def test_a_node_answering_the_legacy_spelling_still_settles(self):
+        """The same identity question from the other side."""
+        self.tree([job()])
+        code, _, err = self.settle_ok(node=self.good_node(destination=SELLER_XRB))
+        self.assertEqual(code, 0, err)
+
+    def test_a_padded_price_still_settles(self):
+        """Raw is an integer, and validate.py admits a padded one, so it reaches here."""
+        self.tree([job(price_raw=PADDED_PRICE_RAW)])
+        code, _, err = self.settle_ok(amount=PRICE_RAW)
+        self.assertEqual(code, 0, err)
+
+    def test_a_stranger_is_still_refused_in_the_legacy_spelling(self):
+        """Comparing accounts must not become comparing nothing."""
+        self.tree([job()])
+        before = self.all_bytes()
+        stranger_xrb = "xrb_" + STRANGER.split("_", 1)[1]
+        code, _, err = self.settle_ok(node=self.good_node(destination=stranger_xrb))
+        self.assertEqual(code, 9, err)
+        self.assertEqual(self.all_bytes(), before)
+
+    def test_a_block_with_no_destination_is_still_refused(self):
+        """An absent link must not match an absent expectation."""
+        self.tree([job()])
+        before = self.all_bytes()
+        code, _, err = self.settle_ok(node=self.good_node(destination=""))
+        self.assertEqual(code, 9, err)
+        self.assertEqual(self.all_bytes(), before)
+
+    def test_a_wrong_amount_is_still_refused(self):
+        """Comparing amounts numerically must not accept a different amount."""
+        self.tree([job()])
+        before = self.all_bytes()
+        code, _, err = self.settle_ok(amount="1")
+        self.assertEqual(code, 9, err)
+        self.assertEqual(self.all_bytes(), before)
+
+    def test_an_amount_that_is_not_a_number_is_refused_and_does_not_raise(self):
+        """A superscript two is isdigit() but not int(): it must refuse, not crash."""
+        self.tree([job()])
+        before = self.all_bytes()
+        code, _, err = self.settle_ok(amount="\u00b2")
+        self.assertEqual(code, 9, err)
+        self.assertEqual(self.all_bytes(), before)
 
 
 if __name__ == "__main__":

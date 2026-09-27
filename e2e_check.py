@@ -61,8 +61,12 @@ def settled_job(**over):
 
 def tree(jobs, receipts, extra=None):
     root = tempfile.mkdtemp()
-    for name in ("validate.py",):
-        shutil.copy(os.path.join(ROOT, name), os.path.join(root, name))
+    # Every top-level module, not just validate.py: the moment validate.py
+    # imported a sibling, copying it alone left the subprocess dying on a
+    # ModuleNotFoundError, which surfaced here as a missing stats.json.
+    for name in sorted(os.listdir(ROOT)):
+        if name.endswith(".py"):
+            shutil.copy(os.path.join(ROOT, name), os.path.join(root, name))
     shutil.copytree(os.path.join(ROOT, "vendor"), os.path.join(root, "vendor"))
     with open(os.path.join(root, "jobs.json"), "w") as handle:
         json.dump({"updated": "2026-09-26T06:00:00Z", "currency": "XNO", "jobs": jobs},

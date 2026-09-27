@@ -438,6 +438,61 @@ class LiveRepository(unittest.TestCase):
                         "no job is priced above 0.1 XNO")
 
 
+class Spellings(TreeCase):
+    """Raw is an integer, and a validator must not crash on a bad field.
+
+    Both cases below fail against the previous code: the first raises a
+    ValueError out of a function whose callers treat it as a verdict, and the
+    second reports a correct tree as a disagreement.
+    """
+
+    def test_a_non_ascii_digit_is_refused_instead_of_raising(self):
+        """`"\u00b2".isdigit()` is True while `int("\u00b2")` raises.
+
+        The old guard was `value.isdigit() and int(value) > 0`, so a price field
+        carrying a superscript two crashed the run instead of being reported as
+        the bad field it is.
+        """
+        for bad in ("\u00b2", "\u00b9\u00b2", "\u0660\u0661"):
+            with self.subTest(value=bad):
+                self.assertIs(validate._is_positive_int_string(bad), False)
+
+    def test_a_real_integer_string_is_still_accepted(self):
+        for good in ("1", "500", "0500", str(25 * XNO // 100)):
+            with self.subTest(value=good):
+                self.assertIs(validate._is_positive_int_string(good), True)
+        for bad in ("", "0", "-1", "1.0", "1e3", None, True, 5):
+            with self.subTest(value=bad):
+                self.assertIs(validate._is_positive_int_string(bad), False)
+
+    def test_a_padded_amount_agrees_with_the_price_it_pays(self):
+        """"0250..." and "250..." are one amount, so this tree is correct."""
+        jobs, receipts = settled_pair()
+        paid = str(25 * XNO // 100)
+        receipts["receipts"][0]["amount_raw"] = "0" + paid
+        self.assertEqual(
+            [e for e in cross_check(jobs, receipts) if "priced at" in e], [],
+            "a padded amount is the same amount")
+
+    def test_an_amount_that_really_differs_is_still_reported(self):
+        """Comparing by value must not become comparing nothing."""
+        jobs, receipts = settled_pair()
+        paid = str(25 * XNO // 100)
+        receipts["receipts"][0]["amount_raw"] = str(int(paid) + 1)
+        errors = cross_check(jobs, receipts)
+        self.assertTrue([e for e in errors if "priced at" in e], joined(errors))
+
+    def test_an_amount_that_is_not_a_number_is_reported(self):
+        """A None or a superscript two must be refused, not silently matched."""
+        for bad in (None, "\u00b2", "", "abc"):
+            with self.subTest(value=bad):
+                jobs, receipts = settled_pair()
+                receipts["receipts"][0]["amount_raw"] = bad
+                errors = cross_check(jobs, receipts)
+                self.assertTrue([e for e in errors if "priced at" in e],
+                                "a non-amount was accepted: %r" % bad)
+
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -388,5 +388,36 @@ class ClaimTests(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "invalid: bad_checksum")
 
 
+class CanonicalAddress(unittest.TestCase):
+    """A claim stores the account, in the one spelling everything else answers."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.dir = self._tmp.name
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_a_legacy_spelling_is_stored_as_the_canonical_one(self):
+        """settle.py compares accounts, so a stored `xrb_` row still settles -
+        but writing it canonically means no new row is ambiguous at all."""
+        legacy = "xrb_" + GENESIS.split("_", 1)[1]
+        write_tree(self.dir, [job("job-001", str(25 * 10 ** 30 // 100), "0.25")])
+        code, _, err = run(self.dir, "job-001", "--handle", "a-seller",
+                           "--address", legacy,
+                           "--claim-url", "https://example.invalid/pr/1")
+        self.assertEqual(code, 0, err)
+        stored = json.loads(read_bytes(self.dir))["jobs"][0]["payout_address"]
+        self.assertEqual(stored, GENESIS)
+        self.assertTrue(stored.startswith("nano_"))
+
+    def test_a_canonical_spelling_is_stored_unchanged(self):
+        write_tree(self.dir, [job("job-001", str(25 * 10 ** 30 // 100), "0.25")])
+        code, _, err = run(self.dir, "job-001", "--handle", "a-seller",
+                           "--address", GENESIS,
+                           "--claim-url", "https://example.invalid/pr/1")
+        self.assertEqual(code, 0, err)
+        self.assertEqual(
+            json.loads(read_bytes(self.dir))["jobs"][0]["payout_address"], GENESIS)
+
+
 if __name__ == "__main__":
     unittest.main()

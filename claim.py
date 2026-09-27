@@ -273,7 +273,11 @@ def do_claim(directory, job_id, handle, address, claim_url, as_json, out, err):
             "refusing to claim: address is invalid: %s" % verdict["reason"],
         )
 
-    address = address.strip()
+    # The canonical `nano_` spelling of the account the claimant gave, not the
+    # spelling they happened to type. settle.py compares accounts rather than
+    # strings, so a row already on disk in the `xrb_` form still settles;
+    # canonicalising here stops new rows being written ambiguously at all.
+    address = verdict["normalised"]
     job["state"] = "claimed"
     job["claimed_by"] = handle
     job["claimed_at"] = now.strftime("%Y-%m-%dT%H:%M:%SZ")
