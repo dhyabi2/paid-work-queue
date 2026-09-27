@@ -120,6 +120,20 @@ def _is_positive_int_string(value):
     return isinstance(value, str) and value.isdigit() and int(value) > 0
 
 
+def _same_raw(left, right):
+    """True when two raw amount strings name the same integer.
+
+    Raw is an integer and an integer has more than one spelling: "250" and
+    "0250" are one amount. `_check_price` already compares with `int()`, so a
+    padded `price_raw` is a valid tree - comparing a receipt against it as text
+    would reject the tree `settle.py` had just written correctly. A malformed
+    value falls back to equality so the dedicated price error still fires.
+    """
+    if not (_is_positive_int_string(left) and _is_positive_int_string(right)):
+        return left == right
+    return int(left) == int(right)
+
+
 def _rfc3339(value):
     match = RFC3339_RE.match(value) if isinstance(value, str) else None
     if not match:
@@ -364,7 +378,7 @@ def cross_check(jobs_document, receipts_document):
                 "the block hash is in the receipt before the state changes"
                 % (job.get("id"), receipt_id)
             )
-        if receipt.get("amount_raw") != job.get("price_raw"):
+        if not _same_raw(receipt.get("amount_raw"), job.get("price_raw")):
             errors.append(
                 "receipts.json: %s paid %r raw for job %s, which is priced at %r raw"
                 % (receipt_id, receipt.get("amount_raw"), job.get("id"), job.get("price_raw"))

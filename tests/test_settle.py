@@ -608,5 +608,56 @@ class SettleTests(unittest.TestCase):
         self.assertEqual(json.loads(self.bytes_of("receipts.json"))["receipts"], [])
 
 
+
+    # -- 19: one amount, two spellings --------------------------------------
+    # Raw is an integer, and "0250..." and "250..." are one amount. validate.py
+    # accepts either (`_check_price` compares with int()), so a padded price is a
+    # VALID tree - but a node always answers the canonical form, so comparing the
+    # two as strings refused a job that had been paid exactly right, after the
+    # money had already left. Before the fix test_19 failed with EXIT_MISMATCH
+    # naming two identical numbers that differed by one leading zero.
+    def test_19_a_padded_price_settles_against_the_canonical_amount(self):
+        padded = "0" + PRICE_RAW
+        self.tree([job(price_raw=padded, price_xno=PRICE_XNO)])
+        code, out, err = self.settle_ok(node=self.good_node(amount=PRICE_RAW))
+        self.assertEqual(code, 0, err)
+        receipt = json.loads(self.bytes_of("receipts.json"))["receipts"][0]
+        # The receipt carries the canonical spelling, and validate.py compares
+        # it against the job's padded price as a number, not as text.
+        self.assertEqual(receipt["amount_raw"], PRICE_RAW)
+        self.assertEqual(receipt["amount_xno"], "0.250000")
+        stats = json.loads(self.bytes_of("stats.json"))
+        self.assertEqual(stats["paid_xno_total"], "0.25")
+
+    def test_19b_the_canonical_price_still_settles_unchanged(self):
+        """The fix must not disturb the ordinary case."""
+        self.tree([job()])
+        code, out, err = self.settle_ok()
+        self.assertEqual(code, 0, err)
+        receipt = json.loads(self.bytes_of("receipts.json"))["receipts"][0]
+        self.assertEqual(receipt["amount_raw"], PRICE_RAW)
+
+    def test_19c_a_genuinely_different_amount_is_still_refused(self):
+        """The fix must not loosen the amount check into accepting underpayment."""
+        self.tree([job()])
+        short = str(int(PRICE_RAW) - 1)
+        code, out, err = self.settle_ok(node=self.good_node(amount=short))
+        self.assertEqual(code, settle.EXIT_MISMATCH, out)
+        self.assertEqual(json.loads(self.bytes_of("receipts.json"))["receipts"], [])
+
+    def test_19d_a_non_numeric_amount_from_the_node_is_refused(self):
+        """A node answering nonsense must not compare equal to anything."""
+        self.tree([job()])
+        code, out, err = self.settle_ok(node=self.good_node(amount="not-a-number"))
+        self.assertEqual(code, settle.EXIT_MISMATCH, out)
+        self.assertEqual(json.loads(self.bytes_of("receipts.json"))["receipts"], [])
+
+    def test_19e_padding_is_not_a_way_to_be_paid_less(self):
+        """A padded price is the same number, not a smaller one."""
+        self.tree([job(price_raw="0" + PRICE_RAW, price_xno=PRICE_XNO)])
+        code, out, err = self.settle_ok(
+            node=self.good_node(amount=str(int(PRICE_RAW) - 1)))
+        self.assertEqual(code, settle.EXIT_MISMATCH, out)
+
 if __name__ == "__main__":
     unittest.main()

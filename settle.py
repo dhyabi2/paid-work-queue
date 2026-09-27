@@ -97,6 +97,31 @@ def canonical(address):
     return verdict["normalised"] if verdict["valid"] else address
 
 
+def raw_amount(value):
+    """The integer a raw amount string names, or None if it is not one.
+
+    Raw is an integer, and an integer has more than one spelling: "250" and
+    "0250" are the same amount. `validate.py` accepts either - `_check_price`
+    compares with `int()`, so a padded price is a *valid* tree - while a node
+    always answers the canonical form. Comparing the two strings therefore
+    refuses a job that was paid exactly right, and by then the money has already
+    left. Compare the integers, which is what the chain means by an amount.
+    """
+    text = str(value).strip()
+    return int(text) if text.isdigit() else None
+
+
+def canonical_raw(value):
+    """The canonical spelling of a raw amount, for the one written to a receipt.
+
+    `validate.py` cross-checks a receipt's `amount_raw` against the job's
+    `price_raw`, so the two have to agree as numbers rather than as text; the
+    receipt carries the canonical form and that check compares integers.
+    """
+    number = raw_amount(value)
+    return str(number) if number is not None else str(value)
+
+
 # --------------------------------------------------------------------------
 # reading and writing the three files, all or nothing
 # --------------------------------------------------------------------------
@@ -269,7 +294,8 @@ def interrogate(node, node_url, block_hash, job, job_id, address):
             % (block_hash, destination, job_id, address))
     amount = str(answer.get("amount"))
     expected = str(job["price_raw"])
-    if amount != expected:
+    paid_raw, priced_raw = raw_amount(amount), raw_amount(expected)
+    if paid_raw is None or priced_raw is None or paid_raw != priced_raw:
         raise Refused(
             EXIT_MISMATCH,
             "block %s paid %s raw, job %s is priced at %s raw - refusing"
@@ -307,7 +333,7 @@ def build_receipt(job, job_id, address, block_hash, node_url, delivery_url,
         "job_id": job_id,
         "seller": job.get("claimed_by"),
         "paid_to": canonical(address),
-        "amount_raw": str(job["price_raw"]),
+        "amount_raw": canonical_raw(job["price_raw"]),
         "amount_xno": format_xno(str(job["price_raw"]), job_id),
         "block_hash": block_hash,
         "confirmed": True,
