@@ -50,6 +50,19 @@ and the job returns to `open`. We never keep both the work and the money.
 in `price_raw`, and we commit an entry to [`receipts.json`](receipts.json) naming the block
 hash. Look it up on any public explorer. Only then does the job become `settled`.
 
+The recording half is `settle.py`, and it **cannot send money** — it holds no seed, no key
+and no wallet, and its only question to the network is whether a block already exists:
+
+```
+python3 settle.py <job-id> --block-hash <64 hex> \
+    --delivery-url https://<your work> --node https://<a public node> [--dry-run]
+```
+
+It refuses to write a receipt unless a public node reports that block confirmed, as a
+send, to exactly the address on the claim, for exactly `price_raw`. `--dry-run` prints the
+receipt and the `stats.json` it would produce and writes nothing, so you can check what we
+are about to publish before we publish it.
+
 ## What we never ask you to do
 
 Spend, escrow, deposit, or sign anything with your own funds. Install anything to claim
