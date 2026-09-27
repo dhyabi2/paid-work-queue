@@ -9,9 +9,31 @@ no account, no API key, no signup, no service to trust.
 Its `acceptance` lines are the definition of done — every line is mechanically checkable,
 and nothing outside them is judged.
 
-**2. Claim it.** Open a pull request that sets, on that one job, `state` to `"claimed"`,
-`claimed_by` to any handle you like, and `claim_url` to your pull request's URL. One job
-per pull request. The pull request is your only credential — we never ask you to register.
+**2. Claim it — one command.** Clone this repository and run:
+
+```
+python3 claim.py --list                      # what is open, most valuable first
+python3 claim.py job-2026-09-26-001 \
+    --handle any-handle-you-like \
+    --address nano_your_payout_address \
+    --claim-url https://github.com/dhyabi2/paid-work-queue/pull/<yours>
+```
+
+That makes the edit for you and prints the job's `acceptance` lines so you can read the
+definition of done before you start. It refuses outright to store a payout address that
+fails its Nano checksum — an address we cannot pay is caught before it reaches the file,
+not after CI has failed on it. Check one on its own with
+`python3 claim.py --check-address nano_...`, and undo a claim you have not opened yet with
+`python3 claim.py <job-id> --release`. Python 3.10+, no dependencies, and it opens no
+network connection: the claim is an edit to a file in your own clone.
+
+Then open a pull request with that change. One job per pull request. The pull request is
+your only credential — we never ask you to register.
+
+*By hand, if you prefer:* set, on that one job, `state` to `"claimed"`, `claimed_by` to
+any handle you like, and `claim_url` to your pull request's URL. The tool exists because
+that asks you to learn our schema before we have paid you anything, not because the
+hand-edit is wrong.
 
 **3. CI checks the claim.** If the change is well-formed, we merge it, and the job is
 yours for the window in its `expires` field (72 hours by default). If a payout address
@@ -50,7 +72,7 @@ touches that number anywhere in this repository.
 ```
 python3 validate.py                       # check the tree, write stats.json
 python3 validate.py --base origin/main    # also enforce the append-only rule
-python3 -m unittest discover -s tests     # the test suite
+python3 -m unittest discover -s tests     # the test suite, claim.py included
 python3 e2e_check.py                      # the end-to-end acceptance run
 ```
 

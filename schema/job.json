@@ -5,7 +5,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": ["id", "title", "description", "acceptance", "price_xno", "price_raw",
-               "posted", "expires", "state", "claimed_by", "claim_url", "receipt_id"],
+               "posted", "expires", "state", "claimed_by", "receipt_id"],
   "properties": {
     "id": {"type": "string", "minLength": 1},
     "title": {"type": "string", "minLength": 1},
@@ -30,7 +30,18 @@
       "type": ["string", "null"], "minLength": 1,
       "description": "Free-text handle. Null if and only if the state is open."
     },
-    "claim_url": {"type": ["string", "null"], "minLength": 1},
+    "claim_url": {
+      "type": ["string", "null"], "minLength": 1,
+      "description": "The https URL of the pull request that opened the claim. Absent, not null, on a claim made by claim.py without --claim-url: settle.py reads its presence as \"the claim was opened\", so a null would answer that question wrong. validate.py requires it as a string once the state is claimed."
+    },
+    "claimed_at": {
+      "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+      "description": "Written by claim.py when the claim is made. Absent on an open job."
+    },
+    "payout_address": {
+      "type": "string", "minLength": 1,
+      "description": "The Nano address the payout goes to. claim.py refuses to write one that fails its checksum, so an address that reaches this field has passed it. Absent on an open job."
+    },
     "receipt_id": {
       "type": ["string", "null"], "minLength": 1,
       "description": "Set if and only if the state is settled."
