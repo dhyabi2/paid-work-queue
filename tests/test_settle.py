@@ -32,6 +32,8 @@ import settle  # noqa: E402
 # that a wrong payee cannot be mistaken for a bad address.
 SELLER = "nano_3t6k35gi95xu6tergt6p69ck76ogmitsa8mnijtpxm9fkcm736xtoncuohr3"
 STRANGER = "nano_1111111111111111111111111111111111111111111111111111hifc8npp"
+# The same account as SELLER, in the legacy spelling nanoaddr still accepts.
+XRB_SELLER = "xrb_" + SELLER[len("nano_"):]
 
 PRICE_RAW = "250000000000000000000000000000"      # 0.25 XNO
 PRICE_XNO = "0.25"
@@ -557,6 +559,53 @@ class SettleTests(unittest.TestCase):
         node = self.good_node()
         self.assertEqual(self.settle_ok(node=node)[0], 0)
         self.assertEqual(len(node.calls), 1, node.calls)
+
+    # -- 18: one account, two spellings ------------------------------------
+    # nanoaddr accepts the legacy `xrb_` prefix and claim.py stores whatever the
+    # claimant gave, but a node answers `link_as_account` in `nano_` form. These
+    # pin that the payee check compares accounts and not strings: before the fix
+    # test_18 failed with EXIT_MISMATCH, naming the same 60-character body twice.
+    def test_18_the_legacy_xrb_spelling_of_the_payee_settles(self):
+        self.tree([job(payout_address=XRB_SELLER)])
+        code, out, err = self.settle_ok(node=self.good_node(destination=SELLER))
+        self.assertEqual(code, 0, err)
+        receipt = json.loads(self.bytes_of("receipts.json"))["receipts"][0]
+        # The receipt carries the canonical spelling, so sellers_paid counts one
+        # seller however the claimant spelled their address.
+        self.assertEqual(receipt["paid_to"], SELLER)
+        self.assertEqual(json.loads(self.bytes_of("stats.json"))["sellers_paid"], 1)
+
+    def test_18b_one_account_spelled_both_ways_is_one_seller(self):
+        self.tree([job("job-1", payout_address=SELLER),
+                   job("job-2", payout_address=XRB_SELLER)])
+        self.assertEqual(self.settle_ok("job-1", hash_seed="A1B2")[0], 0)
+        self.assertEqual(
+            self.settle_ok("job-2", hash_seed="C3D4",
+                           node=nanonode.FakeNode(
+                               {block_hash("C3D4"): send_block(destination=SELLER)}))[0],
+            0)
+        stats = json.loads(self.bytes_of("stats.json"))
+        self.assertEqual(stats["jobs_settled"], 2)
+        self.assertEqual(stats["sellers_paid"], 1, "one account, spelled two ways")
+
+    def test_18c_a_different_account_is_still_refused_in_either_spelling(self):
+        """The fix must not loosen the payee check into accepting a stranger."""
+        for spelling in (SELLER, XRB_SELLER):
+            with self.subTest(spelling=spelling[:4]):
+                self.fresh_dir()
+                self.tree([job(payout_address=spelling)])
+                code, _, err = self.settle_ok(
+                    node=self.good_node(destination=STRANGER))
+                self.assertEqual(code, 9, err)
+                self.assertEqual(
+                    json.loads(self.bytes_of("receipts.json"))["receipts"], [])
+
+    def test_18d_a_block_with_no_destination_is_refused(self):
+        self.tree([job()])
+        node = nanonode.FakeNode({block_hash(): send_block(destination=None)})
+        code, _, err = self.settle_ok(node=node)
+        self.assertEqual(code, 9, err)
+        self.assertEqual(json.loads(self.bytes_of("receipts.json"))["receipts"], [])
 
 
 if __name__ == "__main__":

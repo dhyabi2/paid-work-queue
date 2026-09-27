@@ -71,6 +71,32 @@ def looks_like_a_key(value):
     return bool(value) and bool(HASH_RE.match(str(value).strip()))
 
 
+def account_key(address):
+    """The public key an address decodes to, or None if it is not an address.
+
+    Two addresses name the same account exactly when their public keys match.
+    One account has two spellings: the modern `nano_` form and the legacy `xrb_`
+    form, which `nanoaddr` accepts and `claim.py` stores verbatim as the
+    claimant gave it. A node always answers `link_as_account` in `nano_` form, so
+    comparing the two strings refuses a job that was paid correctly - and by then
+    the money has already left. Compare the keys, which is what the chain means
+    by "the same account".
+    """
+    verdict = nanoaddr.validate(address)
+    return verdict["public_key"] if verdict["valid"] else None
+
+
+def canonical(address):
+    """The `nano_` spelling of an address, for the one written into a receipt.
+
+    `sellers_paid` in stats.json counts distinct `paid_to` strings, so a seller
+    who gave `xrb_` on one job and `nano_` on another would be counted twice
+    while being one account. Receipts this tool writes carry the canonical form.
+    """
+    verdict = nanoaddr.validate(address)
+    return verdict["normalised"] if verdict["valid"] else address
+
+
 # --------------------------------------------------------------------------
 # reading and writing the three files, all or nothing
 # --------------------------------------------------------------------------
@@ -235,7 +261,8 @@ def interrogate(node, node_url, block_hash, job, job_id, address):
 
     contents = answer.get("contents") or {}
     destination = contents.get("link_as_account")
-    if destination != address:
+    paid, owed = account_key(destination), account_key(address)
+    if paid is None or owed is None or paid != owed:
         raise Refused(
             EXIT_MISMATCH,
             "block %s paid %s, but job %s is owed %s - refusing"
@@ -279,7 +306,7 @@ def build_receipt(job, job_id, address, block_hash, node_url, delivery_url,
         "id": receipt_id,
         "job_id": job_id,
         "seller": job.get("claimed_by"),
-        "paid_to": address,
+        "paid_to": canonical(address),
         "amount_raw": str(job["price_raw"]),
         "amount_xno": format_xno(str(job["price_raw"]), job_id),
         "block_hash": block_hash,
