@@ -34,7 +34,8 @@ import nanoaddr  # noqa: E402
 import nanonode  # noqa: E402
 import validate  # noqa: E402
 from claim import format_xno  # noqa: E402  - one renderer for money, not two
-from canonical import same_account, same_amount  # noqa: E402  - one comparison, not three
+from canonical import (  # noqa: E402  - one comparison, not three
+    canonical_account, canonical_raw, same_account, same_amount)
 
 JOBS_FILE = "jobs.json"
 RECEIPTS_FILE = "receipts.json"
@@ -287,8 +288,10 @@ def build_receipt(job, job_id, address, block_hash, node_url, delivery_url,
         "id": receipt_id,
         "job_id": job_id,
         "seller": job.get("claimed_by"),
-        "paid_to": address,
-        "amount_raw": str(job["price_raw"]),
+        # Canonical, not as-typed: sellers_paid counts distinct paid_to values,
+        # so one account written two ways would publish as two sellers paid.
+        "paid_to": canonical_account(address),
+        "amount_raw": canonical_raw(job["price_raw"]),
         "amount_xno": format_xno(str(job["price_raw"]), job_id),
         "block_hash": block_hash,
         "confirmed": True,

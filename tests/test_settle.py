@@ -604,6 +604,38 @@ class Spellings(SettleFixture):
         code, _, err = self.settle_ok(amount=PRICE_RAW)
         self.assertEqual(code, 0, err)
 
+    def test_a_receipt_records_the_canonical_spelling(self):
+        """sellers_paid counts distinct paid_to values, so the rows this tool
+        writes must not disagree with each other about one account."""
+        self.tree([job(payout_address=SELLER_XRB)])
+        code, _, err = self.settle_ok(node=self.good_node(destination=SELLER))
+        self.assertEqual(code, 0, err)
+        receipt = json.loads(self.bytes_of("receipts.json"))["receipts"][0]
+        self.assertEqual(receipt["paid_to"], SELLER)
+
+    def test_a_receipt_records_the_canonical_amount(self):
+        self.tree([job(price_raw=PADDED_PRICE_RAW)])
+        code, _, err = self.settle_ok(amount=PRICE_RAW)
+        self.assertEqual(code, 0, err)
+        receipt = json.loads(self.bytes_of("receipts.json"))["receipts"][0]
+        self.assertEqual(receipt["amount_raw"], PRICE_RAW)
+
+    def test_one_seller_spelled_two_ways_counts_once(self):
+        """The public figure this repository publishes about how many sellers
+        were paid must not double-count one account."""
+        import validate as live
+        receipts = [{"id": "receipt-001", "paid_to": SELLER,
+                     "amount_raw": PRICE_RAW, "amount_xno": "0.25",
+                     "block_hash": block_hash("A1B2"), "job_id": "job-1",
+                     "settled_at": FROZEN},
+                    {"id": "receipt-002", "paid_to": SELLER_XRB,
+                     "amount_raw": PRICE_RAW, "amount_xno": "0.25",
+                     "block_hash": block_hash("C3D4"), "job_id": "job-2",
+                     "settled_at": FROZEN}]
+        stats = live.compute_stats({"jobs": []}, {"receipts": receipts})
+        self.assertEqual(stats["sellers_paid"], 1,
+                         "one account in two spellings is one seller")
+
     def test_a_stranger_is_still_refused_in_the_legacy_spelling(self):
         """Comparing accounts must not become comparing nothing."""
         self.tree([job()])

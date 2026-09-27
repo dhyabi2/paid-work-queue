@@ -53,6 +53,32 @@ def same_account(left, right):
     return key is not None and key == account_key(right)
 
 
+def canonical_account(address):
+    """The `nano_` spelling of an address, or the value unchanged if it is not one.
+
+    For the value WRITTEN to a receipt. Comparing by key is enough to settle
+    correctly, but a receipt is also counted: validate.compute_stats reports
+    `sellers_paid` as the number of distinct `paid_to` values, so one seller who
+    gave the legacy spelling on one job and the modern one on another would be
+    published as two sellers paid. Writing the canonical form means the rows this
+    tool creates cannot disagree with each other about one account.
+    """
+    key = account_key(address)
+    if key is None:
+        return address
+    return nanoaddr.validate(address)["normalised"]
+
+
+def canonical_raw(value):
+    """The canonical spelling of an amount of raw, or the value unchanged.
+
+    For the value WRITTEN to a receipt, so that validate.py's cross-check between
+    a receipt and the job it pays compares two amounts already in one form.
+    """
+    amount = raw_amount(value)
+    return str(amount) if amount is not None else str(value)
+
+
 def raw_amount(value):
     """`value` as an integer count of raw, or None if it does not spell one.
 

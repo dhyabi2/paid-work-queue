@@ -32,7 +32,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor"))
 
 import nanoaddr  # noqa: E402
-from canonical import raw_amount, same_amount  # noqa: E402
+from canonical import account_key, raw_amount, same_amount  # noqa: E402
 from money import raw_to_xno, xno_to_raw  # noqa: E402
 
 JOB_STATES = ("open", "claimed", "delivered", "settled", "expired", "cancelled")
@@ -458,7 +458,11 @@ def compute_stats(jobs_document, receipts_document):
     return {
         "jobs_open": sum(1 for j in jobs if j.get("state") == "open"),
         "jobs_settled": sum(1 for j in jobs if j.get("state") == "settled"),
-        "sellers_paid": len({r["paid_to"] for r in receipts}),
+        # By account, not by spelling: a receipt written before settle.py
+        # canonicalised paid_to may carry the legacy form of an account another
+        # row carries as nano_, and that is one seller, not two.
+        "sellers_paid": len({account_key(r["paid_to"]) or r["paid_to"]
+                             for r in receipts}),
         "paid_xno_total": raw_to_xno(total_raw),
         "first_settlement": settled_at[0] if settled_at else None,
         "last_settlement": settled_at[-1] if settled_at else None,
