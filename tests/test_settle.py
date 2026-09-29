@@ -316,7 +316,14 @@ class SettleTests(SettleFixture):
 
     def test_08b_a_price_a_float_could_not_hold_survives_intact(self):
         odd = "250000000000000000000000000001"     # 0.25 XNO plus one raw
-        self.tree([job(price_raw=odd, price_xno="0.250000000000000000000000000001")])
+        # That single extra raw is a sub-micro tail, which validate.py now
+        # refuses by default: a 6-decimal int64 amount column cannot hold it
+        # (see usdc_shape.py). Priced deliberately, on the record, so this test
+        # keeps asserting what it was written to assert - that settle.py carries
+        # an amount no float could hold through to the receipt unchanged.
+        self.tree([job(price_raw=odd, price_xno="0.250000000000000000000000000001",
+                       sub_micro_ok=True,
+                       excludes_ledgers=["USDC-atomic 6-decimal int64"])])
         code, _, err = self.settle_ok(node=nanonode.FakeNode(
             {block_hash(): send_block(amount=odd)}))
         self.assertEqual(code, 0, err)

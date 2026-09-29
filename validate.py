@@ -34,6 +34,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "ven
 import nanoaddr  # noqa: E402
 from canonical import account_key, raw_amount, same_amount  # noqa: E402
 from money import raw_to_xno, xno_to_raw  # noqa: E402
+from usdc_shape import MIN_SETTLEABLE_RAW  # noqa: E402
 
 JOB_STATES = ("open", "claimed", "delivered", "settled", "expired", "cancelled")
 CLAIMED_STATES = ("claimed", "delivered", "settled")
@@ -201,6 +202,7 @@ def check_jobs(document):
             errors.append("%s: every 'acceptance' line must be a non-empty string" % where)
 
         errors.extend(_check_price(where, job))
+        errors.extend(_check_quantum(where, job))
 
         posted, expires = job.get("posted"), job.get("expires")
         posted_parts, expires_parts = _rfc3339(posted), _rfc3339(expires)
@@ -271,6 +273,66 @@ def _check_price(where, entry, xno_key="price_xno", raw_key="price_raw"):
         )
     return errors
 
+
+
+def _check_quantum(where, job):
+    """A job priced below one micro cannot be settled on a USDC-shaped ledger.
+
+    `minia2auk/minia2a#1` was closed because their refunder's amount column is
+    "USDC atomic units, 6 decimals" read into a Go int64: 1e24 raw is the
+    smallest amount it can hold, and anything with a sub-micro tail strands
+    there at status='failed' rather than being rejected at quote time.
+
+    The rule here is a warning with a door, not a ban, and the door is
+    deliberate. One micro is a property of OTHER people's ledgers, not of
+    Nano - Nano's own quantum is 1 raw - so refusing outright would let a
+    foreign int64 column decide what this queue is allowed to advertise. A
+    maintainer who wants a sub-micro price may have one by saying so on the
+    record: set `sub_micro_ok` and name, in `excludes_ledgers`, the ledger
+    shapes the price excludes. The default stays the safe one, and the
+    exception is never silent.
+    """
+    errors = []
+    price_raw = raw_amount(job.get("price_raw"))
+    if price_raw is None:
+        return errors  # already reported by _check_price
+
+    remainder = price_raw % MIN_SETTLEABLE_RAW
+    declared = job.get("sub_micro_ok")
+    excludes = job.get("excludes_ledgers")
+
+    if remainder == 0:
+        if declared is not None or excludes is not None:
+            errors.append(
+                "%s: 'price_raw' is a whole number of micro, so 'sub_micro_ok'/"
+                "'excludes_ledgers' say nothing and must be removed - a "
+                "standing exception nobody needs is one nobody rereads" % where
+            )
+        return errors
+
+    if declared is not True:
+        errors.append(
+            "%s: 'price_raw' is %d raw, which is %d raw short of a whole micro "
+            "(1 micro = %d raw = 0.000001 XNO). A server whose amount column is "
+            "6-decimal int64 - the shape minia2a refused us over - cannot hold "
+            "this price, and its refund would strand at status='failed'. Either "
+            "price it in whole micro, or set 'sub_micro_ok': true and name the "
+            "ledger shapes it excludes in 'excludes_ledgers'."
+            % (where, price_raw, MIN_SETTLEABLE_RAW - remainder, MIN_SETTLEABLE_RAW)
+        )
+        return errors
+
+    if not isinstance(excludes, list) or not excludes:
+        errors.append(
+            "%s: 'sub_micro_ok' is set but 'excludes_ledgers' is %r - the "
+            "exception has to name what it costs, or it is just a way of "
+            "switching the check off" % (where, excludes)
+        )
+    elif not all(isinstance(item, str) and item.strip() for item in excludes):
+        errors.append(
+            "%s: every 'excludes_ledgers' entry must be a non-empty string" % where
+        )
+    return errors
 
 # --------------------------------------------------------------------------
 # 3. receipts.json

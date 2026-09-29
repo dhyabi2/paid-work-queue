@@ -162,3 +162,74 @@ arrived, so there is no rate in a refund either.
 This is not a price oracle. It never fetches a rate, recommends one, or says a
 rate is right — the seller supplies the number, and the only claim made here is
 that the number is used once.
+
+## Settling XNO on a server built for USDC
+
+A maintainer reviewed our client, wrote the fixes for us on their own branch, and
+then closed the pull request anyway (`minia2auk/minia2a#1`). The reason was not
+our code. Their refunder's amount column is USDC atomic units, 6 decimals, a
+SQLite `INTEGER` read into a Go `int64`, and `int64` tops out at ~9.22e18:
+
+> "The amount column cannot hold the value. … The example amount in
+> `@x402nano/exact` (`1000000000000000000000000`) is 1e24 raw, i.e. 0.000001 XNO,
+> and it **overflows this column**."
+
+> "So adding a `nano` branch to `Get()` would not be enough on its own: the refund
+> path dies at the unit contract first. Changing that is a decision about what the
+> column *means* and about every read site — **not a switch statement.**"
+
+That is not reluctance and it is not fees. It is a type error in the receiving
+system, and it strands refunds silently: the nano row sits at `status='failed'`,
+`attempts=5`, never broadcast, never retried. Two files here answer it.
+
+`usdc_shape.py` is the mapping in both directions, with an explicit refusal
+instead of a silent truncation:
+
+```console
+$ python3 usdc_shape.py describe 1000000000000000000000000
+{
+  "fits_int64": true,
+  "micro": 1,
+  "raw": "1000000000000000000000000",
+  "remainder_raw": "0",
+  "xno": "0.000001"
+}
+```
+
+The amount their column could not hold is exactly one micro here. `raw_to_micro`
+refuses a sub-micro amount rather than rounding it — `floor` and `ceil` exist but
+must be asked for at the call site, because silently truncating a payment is the
+defect the module exists to prevent. `vectors/usdc-shape-v1.json` pins every
+case, including the refusals, for porting to another language.
+
+`server_conformance.py` asks the five gates minia2auk measured, takes the server
+author's own answers, and prints a verdict they can paste into a pull request:
+
+```console
+$ python3 server_conformance.py --template > /tmp/a.json
+$ python3 server_conformance.py --answers /tmp/a.json --json
+{
+  "verdict": "unknown",
+  ...
+  "unknown": ["network_registered", "settleable_capability", "amount_column_width",
+              "refunder_registered", "chain_route_accepts"],
+  "next_step": "Nothing is known to be broken, but … have not been checked, so this is not a pass."
+}
+$ echo $?
+5
+```
+
+An unanswered gate never counts in our favour: all five `true` is the only route
+to `would_settle`. Exit codes are 0 `would_settle`, 3 `would_refuse`, 5
+`unknown`, 4 usage error.
+
+**The quantum, in one line:** on a ledger with this shape 1 micro = `10**24` raw =
+0.000001 XNO is the smallest payment that exists, so a job priced below it cannot
+be settled there — `validate.py` refuses such a price unless the job carries
+`"sub_micro_ok": true` and names the ledger shapes it excludes in
+`"excludes_ledgers"`.
+
+This is not a claim that any server should accept XNO, and it is not a patch to
+anyone's code. It is the arithmetic and the checklist that let a server author
+answer, in an afternoon and in public, a question that currently takes a week of
+reading to answer at all.

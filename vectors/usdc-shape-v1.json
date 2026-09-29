@@ -1,0 +1,168 @@
+{
+  "v": 1,
+  "title": "usdc-shape v1 conformance vectors",
+  "purpose": "Hand this to the author of a USDC-shaped x402 server who asks which XNO amounts their 6-decimal int64 amount column can hold. Any language reproducing every case agrees with paid-work-queue on the mapping and, just as importantly, on which amounts it REFUSES.",
+  "raw_per_xno": "1000000000000000000000000000000",
+  "raw_per_micro": "1000000000000000000000000",
+  "int64_max_micro": "9223372036854775807",
+  "min_settleable_raw": "1000000000000000000000000",
+  "policy": {
+    "default_on_remainder": "refuse",
+    "rationale": "A raw amount that is not a whole multiple of 10**24 cannot be stored in a micro column without losing the remainder. Silently truncating a payment amount is the defect this vector set exists to prevent, so the default is the refusal and 'floor'/'ceil' must be asked for explicitly at the call site.",
+    "check_order": [
+      "negative",
+      "remainder",
+      "overflow"
+    ],
+    "note": "An implementation that reports overflow for a negative input, or truncation for an input that is both non-multiple and oversized, disagrees with these vectors."
+  },
+  "cases": [
+    {
+      "name": "minia2a's example amount - the one that overflows their column",
+      "kind": "raw_to_micro",
+      "input": {
+        "raw": "1000000000000000000000000"
+      },
+      "expect": {
+        "micro": 1,
+        "raw_round_trip": "1000000000000000000000000"
+      },
+      "why": "1e24 raw is 0.000001 XNO. It is exactly one micro here, and one micro fits an int64 with room to spare. The amount their column could not hold is the smallest this one holds."
+    },
+    {
+      "name": "the queue's cheapest real job, 0.05 XNO",
+      "kind": "raw_to_micro",
+      "input": {
+        "raw": "50000000000000000000000000000"
+      },
+      "expect": {
+        "micro": 50000,
+        "raw_round_trip": "50000000000000000000000000000"
+      },
+      "why": "job-2026-09-26-003 is priced at 0.05 XNO, which is a whole number of micro, so a USDC-shaped server could settle it once the column is right."
+    },
+    {
+      "name": "one whole XNO",
+      "kind": "raw_to_micro",
+      "input": {
+        "raw": "1000000000000000000000000000000"
+      },
+      "expect": {
+        "micro": 1000000,
+        "raw_round_trip": "1000000000000000000000000000000"
+      },
+      "why": "1 XNO is 10**6 micro."
+    },
+    {
+      "name": "zero",
+      "kind": "raw_to_micro",
+      "input": {
+        "raw": "0"
+      },
+      "expect": {
+        "micro": 0,
+        "raw_round_trip": "0"
+      },
+      "why": "Zero is representable and is not an error. It is not a payment either."
+    },
+    {
+      "name": "the largest amount the column can hold",
+      "kind": "raw_to_micro",
+      "input": {
+        "raw": "9223372036854775807000000000000000000000000"
+      },
+      "expect": {
+        "micro": 9223372036854775807,
+        "raw_round_trip": "9223372036854775807000000000000000000000000"
+      },
+      "why": "~9.223e12 XNO - far above any real payment, which is the point: the ceiling is not the problem, the quantum at the bottom is."
+    },
+    {
+      "name": "one raw - the smallest possible sub-micro amount",
+      "kind": "raw_to_micro",
+      "input": {
+        "raw": "1",
+        "on_remainder": "refuse"
+      },
+      "expect": {
+        "error": "not_representable",
+        "remainder_raw": "1",
+        "floor": 0,
+        "ceil": 1
+      },
+      "why": "A micro column cannot express 1 raw at all. Under 'floor' this amount becomes zero, which is why 'floor' is never the default."
+    },
+    {
+      "name": "a real amount with a sub-micro tail",
+      "kind": "raw_to_micro",
+      "input": {
+        "raw": "1000000000000000000000007",
+        "on_remainder": "refuse"
+      },
+      "expect": {
+        "error": "not_representable",
+        "remainder_raw": "7",
+        "floor": 1,
+        "ceil": 2
+      },
+      "why": "The tail is lost either way; the caller has to choose in writing which direction."
+    },
+    {
+      "name": "one micro above int64",
+      "kind": "raw_to_micro",
+      "input": {
+        "raw": "9223372036854775808000000000000000000000000",
+        "on_remainder": "refuse"
+      },
+      "expect": {
+        "error": "int64_overflow",
+        "micro": "9223372036854775808"
+      },
+      "why": "Assert the refusal, not a large return value: the Go int64 on the other side does not wrap, it fails to store."
+    },
+    {
+      "name": "negative raw",
+      "kind": "raw_to_micro",
+      "input": {
+        "raw": "-1",
+        "on_remainder": "refuse"
+      },
+      "expect": {
+        "error": "negative_amount"
+      },
+      "why": "There is no such payment. Checked before remainder and before overflow."
+    }
+  ],
+  "describe_cases": [
+    {
+      "name": "describe is JSON-safe for a 10^30 amount",
+      "kind": "describe",
+      "input": {
+        "raw": "1000000000000000000000000000000"
+      },
+      "expect": {
+        "raw": "1000000000000000000000000000000",
+        "xno": "1",
+        "micro": 1000000,
+        "fits_int64": true,
+        "remainder_raw": "0"
+      },
+      "why": "Every integer is a decimal string except `micro`, because a JSON consumer with 53-bit numbers would receive a 10^30 integer already rounded. `micro` is a JSON number because fitting in an int64 is its whole purpose."
+    },
+    {
+      "name": "describe reports the remainder rather than hiding it",
+      "kind": "describe",
+      "input": {
+        "raw": "1000000000000000000000007"
+      },
+      "expect": {
+        "raw": "1000000000000000000000007",
+        "xno": "0.000001000000000000000000000007",
+        "micro": 1,
+        "fits_int64": true,
+        "remainder_raw": "7"
+      },
+      "why": "describe never raises on a non-multiple; it names the part that would be lost."
+    }
+  ]
+}
