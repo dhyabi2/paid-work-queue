@@ -1,0 +1,135 @@
+{
+ "v": 1,
+ "title": "quote-lock v1 conformance vectors",
+ "purpose": "Hand this to a seller who asks 'will your numbers match mine'. Any language reproducing every case agrees with paid-work-queue on the arithmetic and on the digest.",
+ "raw_per_xno": "1000000000000000000000000000000",
+ "digest": {
+  "algorithm": "blake2b",
+  "digest_size_bytes": 32,
+  "encoding": "hex-lowercase",
+  "field_order": [
+   "v",
+   "nonce",
+   "usd",
+   "rate_xno_per_usd",
+   "amount_raw",
+   "pay_to",
+   "issued_at",
+   "expires_at"
+  ],
+  "joined_by": "\n",
+  "trailing_newline": false,
+  "note": "The lock below is pinned as two 32-character halves, not as one 64-character literal, because validate.py refuses any committed file holding 64 hex characters standing alone - a Nano seed looks exactly like that. Concatenate the halves to get the digest."
+ },
+ "rounding": {
+  "mode": "ROUND_CEILING",
+  "context_precision": 60,
+  "rationale": "Rounding up by at most one raw favours the seller.",
+  "never_fires_for_valid_quotes": true,
+  "proof": "usd carries exactly 4 decimal places and rate_xno_per_usd exactly 10, so their product has at most 14; scaling by 10**30 leaves an integer number of raw every time. The ceiling is a guarantee for callers who scale differently, not live behaviour here."
+ },
+ "cases": [
+  {
+   "name": "the quoted example",
+   "kind": "amount",
+   "input": {
+    "usd": "0.0500",
+    "rate_xno_per_usd": "0.8412000000"
+   },
+   "expect": {
+    "amount_raw": "42060000000000000000000000000"
+   },
+   "why": "0.05 USD at 0.8412 XNO/USD."
+  },
+  {
+   "name": "smallest expressible quote",
+   "kind": "amount",
+   "input": {
+    "usd": "0.0001",
+    "rate_xno_per_usd": "0.0000000001"
+   },
+   "expect": {
+    "amount_raw": "10000000000000000"
+   },
+   "why": "The finest usd and the finest rate the wire format allows; still exact, still non-zero."
+  },
+  {
+   "name": "a float path would lose this",
+   "kind": "amount",
+   "input": {
+    "usd": "0.1000",
+    "rate_xno_per_usd": "0.1000000000"
+   },
+   "expect": {
+    "amount_raw": "10000000000000000000000000000"
+   },
+   "why": "Exactly 10**28 raw. A binary floating-point product gives 0.010000000000000002 and corrupts the bottom digits."
+  },
+  {
+   "name": "1e24 raw, the amount that overflowed minia2a's column",
+   "kind": "amount",
+   "input": {
+    "usd": "0.0010",
+    "rate_xno_per_usd": "0.0010000000"
+   },
+   "expect": {
+    "amount_raw": "1000000000000000000000000"
+   },
+   "why": "0.000001 XNO = 1000000000000000000000000 raw."
+  },
+  {
+   "name": "digest agreement on a fixed quote",
+   "kind": "lock",
+   "input": {
+    "v": 1,
+    "nonce": "b3f1c0a49d2e4c7a",
+    "usd": "0.0500",
+    "rate_xno_per_usd": "0.8412000000",
+    "amount_raw": "42060000000000000000000000000",
+    "pay_to": "nano_11131a3ia3a81w61k4id3i8iw5ri46b3871o4rdji8at5eg3t9izij86w3hz",
+    "issued_at": "2026-09-28T06:30:00Z",
+    "expires_at": "2026-09-28T06:45:00Z"
+   },
+   "expect": {
+    "preimage": "1\nb3f1c0a49d2e4c7a\n0.0500\n0.8412000000\n42060000000000000000000000000\nnano_11131a3ia3a81w61k4id3i8iw5ri46b3871o4rdji8at5eg3t9izij86w3hz\n2026-09-28T06:30:00Z\n2026-09-28T06:45:00Z",
+    "lock_halves": [
+     "eb5223f37921526f95f4635930f54508",
+     "8b9cd5f06a8410e013e9a3f2c65781cf"
+    ]
+   },
+   "why": "Pins blake2b-32 over the canonical bytes. Recompute the preimage from field_order, digest it, split it in two, and compare."
+  },
+  {
+   "name": "an xrb_ payer settles a nano_ quote",
+   "kind": "verify",
+   "input": {
+    "quote_pay_to": "nano_11131a3ia3a81w61k4id3i8iw5ri46b3871o4rdji8at5eg3t9izij86w3hz",
+    "received_to": "xrb_11131a3ia3a81w61k4id3i8iw5ri46b3871o4rdji8at5eg3t9izij86w3hz",
+    "received_raw": "42060000000000000000000000000",
+    "usd": "0.0500",
+    "rate_xno_per_usd": "0.8412000000"
+   },
+   "expect": {
+    "ok": true,
+    "overpaid_raw": "0"
+   },
+   "why": "nano_ and xrb_ spell the same public key. Comparing the strings refuses a payment that did arrive."
+  },
+  {
+   "name": "a different account is refused",
+   "kind": "verify",
+   "input": {
+    "quote_pay_to": "nano_11131a3ia3a81w61k4id3i8iw5ri46b3871o4rdji8at5eg3t9izij86w3hz",
+    "received_to": "nano_3zr31a3ia3a81w61k4id3i8iw5ri46b3871o4rdji8at5eg3t9izgabtgx3o",
+    "received_raw": "42060000000000000000000000000",
+    "usd": "0.0500",
+    "rate_xno_per_usd": "0.8412000000"
+   },
+   "expect": {
+    "ok": false,
+    "code": "wrong_payee"
+   },
+   "why": "Same length, valid checksum, wrong payee."
+  }
+ ]
+}

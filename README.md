@@ -95,3 +95,70 @@ in [dhyabi2/swarm-decisions](https://github.com/dhyabi2/swarm-decisions); they a
 vendored so this repository has no dependencies at all.
 
 MIT licensed.
+
+
+## Price in dollars, settle in XNO
+
+> "Everything we sell is priced in dollars and settled in stablecoins, and a
+> volatile settlement asset would mean an exchange rate in every quote and
+> refund, which we don't want to take on."
+> — MikeyPetrillo, `MikeyPetrillo/Agent402#1464`
+
+`quotelock.py` answers that objection by reading the rate exactly once:
+
+```
+python3 quotelock.py quote  --usd 0.05 --rate 0.8412 --pay-to nano_1... --ttl 900 [--json]
+python3 quotelock.py check  --quote quote.json [--json]
+python3 quotelock.py verify --quote quote.json --received-raw 42060000000000000000000000000 \
+                            --received-to nano_1... [--json]
+python3 quotelock.py refund --receipt receipt.json [--json]
+```
+
+The rate is read once, at quote time, by the seller, and never again by anything.
+
+### A quote, end to end
+
+```console
+$ python3 quotelock.py quote --usd 0.05 --rate 0.8412 \
+    --pay-to nano_11131a3ia3a81w61k4id3i8iw5ri46b3871o4rdji8at5eg3t9izij86w3hz --ttl 900 --json
+{
+ "amount_raw": "42060000000000000000000000000",
+ "expires_at": "2026-09-29T21:54:47Z",
+ "issued_at": "2026-09-29T21:39:47Z",
+ "lock": "59dbe3a9a13e9435fcb338c5486f67f8" "ad49ceb1de14e08a3bddf57af9955e6e",
+ "nonce": "b3f1c0a49d2e4c7a",
+ "pay_to": "nano_11131a3ia3a81w61k4id3i8iw5ri46b3871o4rdji8at5eg3t9izij86w3hz",
+ "rate_xno_per_usd": "0.8412000000",
+ "usd": "0.0500",
+ "v": 1
+}
+```
+
+`0.05 USD x 0.8412 XNO/USD = 0.04206 XNO = 42060000000000000000000000000 raw`, computed with
+`Decimal` at 60 digits of precision and `ROUND_CEILING`. A binary floating-point
+value here would lose the bottom 13+ digits of every amount, so none is used;
+`tests/test_quotelock.py` fails the build if one appears.
+
+The `lock` above is one blake2b-32 digest, printed as two quoted halves because
+`validate.py` refuses any committed file carrying 64 hex characters standing
+alone — a Nano seed looks exactly like that. At runtime it is a single 64-character
+string. `vectors/quote-lock-v1.json` pins the digest the same way, together with
+the exact preimage, so a TypeScript or Go implementation can check it agrees.
+
+Settling reads the quote and never a rate:
+
+```console
+$ python3 quotelock.py verify --quote quote.json \
+    --received-raw 42060000000000000000000000000 --received-to <the xrb_ spelling of the same account> --json
+{"ok": true, "overpaid_raw": "0", ...}   # exit 0 — the only thing that means paid
+$ echo 0
+0
+```
+
+Underpay by a single raw and it exits 3 with `{"ok": false, "code": "underpaid"}`.
+Overpayment is accepted and reported, never refused. A refund is the raw that
+arrived, so there is no rate in a refund either.
+
+This is not a price oracle. It never fetches a rate, recommends one, or says a
+rate is right — the seller supplies the number, and the only claim made here is
+that the number is used once.

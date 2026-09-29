@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schema/quote.json",
+  "title": "A locked quote: a dollar price, the rate it was priced at, and the only raw that settles it",
+  "description": "The rate is read once, at quote time, by the seller. Nothing on the settlement or refund path reads a rate; `lock` seals amount_raw together with the usd and rate it came from, so a tampered rate cannot survive. Validated by quotelock.check_quote, which also verifies the checksum and the digest - this schema alone is not sufficient.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "nonce", "usd", "rate_xno_per_usd", "amount_raw",
+               "pay_to", "issued_at", "expires_at", "lock"],
+  "properties": {
+    "v": {"const": 1},
+    "nonce": {
+      "type": "string", "pattern": "^[0-9a-f]{8,64}$",
+      "description": "Lowercase hex, secrets.token_hex(8) by default."
+    },
+    "usd": {
+      "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.[0-9]{4}$",
+      "description": "Dollar price, exactly 4 decimal places, greater than zero."
+    },
+    "rate_xno_per_usd": {
+      "type": "string", "pattern": "^(0|[1-9][0-9]*)\\.[0-9]{10}$",
+      "description": "XNO per one USD, exactly 10 decimal places, greater than zero. The seller supplies this number; this package never fetches, recommends or endorses a rate."
+    },
+    "amount_raw": {
+      "type": "string", "pattern": "^[1-9][0-9]*$",
+      "description": "ceil(usd * rate_xno_per_usd * 10**30). The only amount that ever settles. 1 XNO = 10**30 raw, so this is an integer string and never a binary fraction."
+    },
+    "pay_to": {
+      "type": "string",
+      "pattern": "^(nano|xrb)_[13][13456789abcdefghijkmnopqrstuwxyz]{59}$",
+      "description": "Checksum-validated by quotelock.check_quote before use; the pattern alone is not sufficient."
+    },
+    "issued_at": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"},
+    "expires_at": {
+      "type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+      "description": "Must be strictly after issued_at. now == expires_at is still payable."
+    },
+    "lock": {
+      "type": "string", "pattern": "^[0-9a-f]{64}$",
+      "description": "blake2b(canonical, digest_size=32) over v, nonce, usd, rate_xno_per_usd, amount_raw, pay_to, issued_at, expires_at joined by a newline with no trailing newline. Held at runtime only: validate.py refuses any committed file carrying 64 hex characters standing alone, because a Nano seed looks exactly like that, so vectors/quote-lock-v1.json pins this digest as two halves plus its preimage instead of as one literal."
+    }
+  }
+}
