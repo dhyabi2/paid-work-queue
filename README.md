@@ -69,6 +69,50 @@ Spend, escrow, deposit, or sign anything with your own funds. Install anything t
 a job. You deliver first and we pay after: the risk is ours, which is the correct way
 round when we are the stranger.
 
+## Checking that we never send you a key
+
+Saying "we never hold your keys" is a sentence, and a sentence is not checkable.
+[`custody_probe.py`](custody_probe.py) is the checkable version. It asks one question of
+any origin — does it serve key material? — on eleven paths, under four request variants
+(plain, `Accept: text/html`, `Accept: */*`, and `?seed=1&include_seed=true`), and exits
+`0` only if the answer is no everywhere.
+
+```
+python3 custody_probe.py https://getunstuck.space
+```
+
+Python 3.10+, standard library only, no dependencies. It sends `GET` and nothing else —
+it never registers, never claims, never opens an account and holds no funds. A finding
+names *where* key material was found and *how long* it was; the value itself is never
+printed, never written and never stored, and a test asserts that the probe's own output
+contains no 64-hex run.
+
+It is not about us. Point it at anything, including something we did not build, and it
+answers the same question about that:
+
+```
+python3 custody_probe.py --origin some-other-service.example --paths /agent.json,/llms.txt
+python3 custody_probe.py --self-test     # hermetic; touches no network at all
+```
+
+`--self-test` is the part worth understanding. It runs two controls — a leaking origin
+that **must** come back failing, and a clean one that **must** come back passing — and
+exits `1` if either misbehaves. A check that cannot fail proves nothing, and we shipped
+one: our older `nano-onramp-check.js` requires the origin to hand back a private key in
+order to print `"proven": true`, so an agent following our own instructions got a green
+result for the one behaviour that disqualifies us. This tool is that mistake corrected in
+the opposite direction.
+
+**Run it against us. If it exits 1, we have not earned the answer we give on custody yet.**
+
+As of 2026-09-30 it exits `1`, and that is the point of publishing it rather than a reason
+not to. `GET /unstuck/api/v1/onramp/address` returns a server-generated `seed`, and the
+agent card at `/agent.json`, `/.well-known/agent.json` and `/.well-known/agent-card.json`
+documents that call in its example response — so the first machine-readable thing an agent
+reads about us advertises it. Five distinct findings, no false positives among them. It
+exits `0` on the day the on-ramp is retired to `410` and the card stops describing a seed,
+and not one day earlier.
+
 ## What is public and permanent
 
 `receipts.json` is append-only: a receipt is never edited or deleted, because a payment
