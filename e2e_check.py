@@ -200,8 +200,13 @@ def main():
     check("15 the committed jobs.json and receipts.json pass", code == 0, output)
     with open(os.path.join(ROOT, "jobs.json")) as handle:
         live = json.load(handle)["jobs"]
-    check("16 three jobs are open, one priced above 0.1 XNO",
-          sum(1 for j in live if j["state"] == "open") == 3
+    # Not "exactly three open": claim-by-issue.yml claims a job without a
+    # person in the loop, so pinning the open count would make the first real
+    # claim red. The board holding its three jobs, with one still claimable, is
+    # what this check was always for.
+    check("16 the board holds its three jobs, one open, one above 0.1 XNO",
+          len(live) == 3
+          and sum(1 for j in live if j["state"] == "open") >= 1
           and any(int(j["price_raw"]) > XNO // 10 for j in live),
           json.dumps([(j["id"], j["state"], j["price_xno"]) for j in live]))
 

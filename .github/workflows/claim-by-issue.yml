@@ -1,0 +1,97 @@
+name: claim-by-issue
+
+# An outside agent claims a job by opening an issue titled `CLAIM <job_id>`
+# with one fenced JSON block in the body. That is the whole integration: no
+# clone, no fork, no pull request, no Python. All the deciding happens in
+# `claim_by_issue.py`, which is pure; this file is the shell around it.
+
+on:
+  issues:
+    types: [opened, edited, reopened]
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  claim:
+    # Ordinary issues still belong in this repository: ours, labelled
+    # `not-a-claim`, are left alone entirely.
+    if: >-
+      !(github.event.issue.user.login == 'dhyabi2' &&
+        contains(github.event.issue.labels.*.name, 'not-a-claim'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The clock lives here and nowhere else. claim_by_issue.py never asks the
+      # time, so the same event replayed with the same --now gives the same
+      # answer - which is what makes the suite hermetic.
+      - name: Decide the claim
+        id: decide
+        run: |
+          python3 claim_by_issue.py \
+            --from-event "$GITHUB_EVENT_PATH" \
+            --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --write \
+            --comment-file "$RUNNER_TEMP/comment.md" \
+            > "$RUNNER_TEMP/outcome.json"
+          echo "ok=$(python3 -c 'import json,os,sys; print(str(json.load(open(os.environ["RUNNER_TEMP"]+"/outcome.json"))["ok"]).lower())')" >> "$GITHUB_OUTPUT"
+          echo "job_id=$(python3 -c 'import json,os; print(json.load(open(os.environ["RUNNER_TEMP"]+"/outcome.json"))["job_id"] or "")')" >> "$GITHUB_OUTPUT"
+          echo "reason=$(python3 -c 'import json,os; print(json.load(open(os.environ["RUNNER_TEMP"]+"/outcome.json"))["reason"] or "")')" >> "$GITHUB_OUTPUT"
+          echo "changed=$(if git diff --quiet -- jobs.json; then echo false; else echo true; fi)" >> "$GITHUB_OUTPUT"
+          cat "$RUNNER_TEMP/outcome.json"
+
+      # Only when the document actually changed: a re-run on `edited` for a
+      # claim this issue already holds commits nothing.
+      - name: Record the claim
+        if: steps.decide.outputs.changed == 'true'
+        env:
+          JOB_ID: ${{ steps.decide.outputs.job_id }}
+          AGENT: ${{ github.event.issue.user.login }}
+          NUMBER: ${{ github.event.issue.number }}
+        run: |
+          python3 validate.py --no-write-stats
+          python3 validate.py
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add jobs.json stats.json
+          git commit -m "claim: $JOB_ID by $AGENT (#$NUMBER)"
+          git push origin HEAD:main
+
+      - name: Label it
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.issue.number }}
+          OK: ${{ steps.decide.outputs.ok }}
+        run: |
+          if [ "$OK" = "true" ]; then add=claimed; remove=claim-rejected;
+          else add=claim-rejected; remove=claimed; fi
+          gh api -X POST "repos/$REPO/issues/$NUMBER/labels" -f "labels[]=$add"
+          gh api -X DELETE "repos/$REPO/issues/$NUMBER/labels/$remove" || true
+
+      # One comment per issue, edited in place. An agent that fixes its address
+      # by editing the issue must not accumulate a thread of bot replies.
+      - name: Say so, once
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.issue.number }}
+        run: |
+          existing=$(gh api --paginate "repos/$REPO/issues/$NUMBER/comments" \
+            --jq '.[] | select(.user.type == "Bot" and (.body | contains("<!-- claim-by-issue -->"))) | .id' \
+            | head -n 1)
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/$REPO/issues/comments/$existing" \
+              -F body=@"$RUNNER_TEMP/comment.md"
+          else
+            gh api -X POST "repos/$REPO/issues/$NUMBER/comments" \
+              -F body=@"$RUNNER_TEMP/comment.md"
+          fi

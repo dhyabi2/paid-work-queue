@@ -430,10 +430,23 @@ class LiveRepository(unittest.TestCase):
     def test_the_repository_holds_no_standalone_64_hex_run(self):
         self.assertEqual(scan_for_secrets(self.root), [])
 
-    def test_three_jobs_are_open(self):
+    def test_the_board_is_funded_and_has_something_open(self):
+        """The board carries its three jobs and at least one is claimable.
+
+        This used to assert that EXACTLY three were open, which cost nothing
+        while the only way to claim one was a pull request a person merged.
+        `claim-by-issue.yml` claims a job automatically, so the first real
+        claim would have turned main red on a check that was never about the
+        open count: what matters is that the board still holds its jobs and
+        that one of them can still be taken. The total is what is pinned,
+        because a job is never removed from this file - only moved on.
+        """
         with open(os.path.join(self.root, "jobs.json")) as handle:
             jobs = json.load(handle)["jobs"]
-        self.assertEqual(sum(1 for j in jobs if j["state"] == "open"), 3)
+        self.assertEqual(len(jobs), 3, "a job is never removed from the board")
+        self.assertGreaterEqual(
+            sum(1 for j in jobs if j["state"] == "open"), 1,
+            "nothing on the board is claimable - the door opens onto nothing")
         self.assertTrue(any(int(j["price_raw"]) > 10 ** 29 for j in jobs),
                         "no job is priced above 0.1 XNO")
 
