@@ -381,5 +381,195 @@ class TestTheBuildRules(unittest.TestCase):
         self.assertIn('"measured_at": "2026-09-30T06:00:00Z"', first)
 
 
+
+# ==========================================================================
+# agent-tool-custody-probe-shape: a finding has to be a thing actually found
+#
+# Four of the five findings this probe reported against our own origin were
+# documentation placeholders in a documented example response. The one that
+# was real is still real. These tests pin the difference, and test 2 below is
+# the one that stops the fix becoming the defect it is fixing.
+# ==========================================================================
+
+# Assembled at runtime. This is the shape our own /agent.json serves, not a
+# value captured from it: there is no key material in a placeholder to capture.
+PLACEHOLDER = "<" + "64 hex chars; yours, never stored by the network" + ">"
+NANO_BODY = ("abcdefghijkmnopqrstuwxyz" * 3)[:52]
+BASE64ISH = ("QWxhZGRpbjpvcGVuIHNlc2FtZQ" + "A" * 24)[:44]
+TWELVE_WORDS = " ".join(["abandon", "ability", "able", "about", "above", "absent",
+                         "absorb", "abstract", "absurd", "abuse", "access", "accident"])
+THIRTEEN_WORDS = TWELVE_WORDS + " account"
+DISCOVERY = ["/agent.json", "/.well-known/agent.json", "/.well-known/agent-card.json"]
+
+
+def card_body():
+    """The documented example response our agent card actually carries."""
+    return {"name": "unstuck", "first_call": {"call_1": {
+        "method": "GET", "path": "/unstuck/api/v1/onramp/address",
+        "response": {"address": "nano_3abc", "seed": PLACEHOLDER, "index": 0}}}}
+
+
+def one_path(payload, path="/agent.json", status=200):
+    return probe("https://x.invalid", paths=[path],
+                 fetch=responder({path: (status, payload)}))
+
+
+def secret_value(value):
+    """A probe result for `{"seed": <value>}` served at /agent.json."""
+    return one_path({"seed": value})
+
+
+def json_key_findings(result, index=0):
+    return [f for f in result["paths"][index]["variants"]["plain"]["findings"]
+            if f["pattern"] == "json_key"]
+
+
+def json_key_exclusions(result, index=0):
+    return [e for e in result["paths"][index]["excluded"] if e["pattern"] == "json_key"]
+
+
+class TestDocumentedPlaceholders(unittest.TestCase):
+    # -- 1 ------------------------------------------------------------------
+    def test_s1_the_exact_live_case_is_a_disclosure_and_not_a_finding(self):
+        result = one_path(card_body())
+        self.assertEqual(result["paths"][0]["variants"]["plain"]["findings"], [])
+        self.assertEqual(result["findings_total"], 0)
+        self.assertTrue(result["documents_key_disclosure"])
+        self.assertEqual(len(result["documented_disclosures"]), 1)
+        entry = result["documented_disclosures"][0]
+        self.assertEqual(entry["reason"], "documented_key_placeholder")
+        self.assertEqual(entry["json_path"], "$.first_call.call_1.response.seed")
+        self.assertEqual(entry["path"], "/agent.json")
+        self.assertEqual(entry["value_length"], len(PLACEHOLDER))
+        self.assertTrue(result["pass"])
+
+    # -- 2 ------------------------------------------------------------------
+    def test_s2_the_real_leak_still_fails(self):
+        """The test that stops this fix becoming the defect it is fixing."""
+        result = secret_value("A" * 64)
+        patterns = sorted(f["pattern"]
+                          for f in result["paths"][0]["variants"]["plain"]["findings"])
+        self.assertEqual(patterns, ["hex64", "json_key"])
+        self.assertFalse(result["pass"])
+        self.assertFalse(result["serves_no_key_material"])
+        self.assertEqual(result["documented_disclosures"], [])
+
+    # -- 3 ------------------------------------------------------------------
+    def test_s3_placeholder_vocabulary_is_excluded(self):
+        for value in ("<your seed>", "{{SEED}}", "YOUR_SEED_HERE", "…",
+                      "string", "<64 hex chars>", "see docs", "null"):
+            with self.subTest(value=value):
+                result = secret_value(value)
+                self.assertEqual(json_key_findings(result), [], value)
+                self.assertEqual(json_key_exclusions(result)[0]["reason"],
+                                 "documented_key_placeholder")
+
+    def test_s3b_real_key_encodings_are_findings(self):
+        for value in ("a" * 32, "f" * 64, "xprv" + "a" * 30, NANO_BODY,
+                      BASE64ISH, TWELVE_WORDS):
+            with self.subTest(value=value[:16]):
+                result = secret_value(value)
+                self.assertEqual(len(json_key_findings(result)), 1, value[:16])
+                self.assertFalse(result["pass"])
+
+    # -- 4 ------------------------------------------------------------------
+    def test_s4_length_alone_never_excludes(self):
+        result = secret_value("ab")
+        self.assertEqual(len(json_key_findings(result)), 1,
+                         "two characters of hex are still hex; conservatism is "
+                         "directional and a length floor points the wrong way")
+        self.assertFalse(result["pass"])
+
+    # -- 5 ------------------------------------------------------------------
+    def test_s5_interior_whitespace_is_not_an_encoding(self):
+        result = secret_value("abc " + "d" * 60)
+        self.assertEqual(json_key_findings(result), [])
+        self.assertEqual(json_key_exclusions(result)[0]["reason"],
+                         "documented_key_placeholder")
+
+    def test_s5b_a_twelve_word_phrase_is_a_finding_and_thirteen_is_not(self):
+        self.assertEqual(len(json_key_findings(secret_value(TWELVE_WORDS))), 1)
+        self.assertEqual(json_key_findings(secret_value(THIRTEEN_WORDS)), [])
+
+    # -- 6 ------------------------------------------------------------------
+    def test_s6_integers_are_unchanged(self):
+        result = one_path({"private_key": 1234567890123456789})
+        self.assertEqual(len(json_key_findings(result)), 1)
+        self.assertFalse(result["pass"])
+
+    # -- 7 ------------------------------------------------------------------
+    def test_s7_null_false_and_empty_keep_their_own_reason(self):
+        for value in (None, False, ""):
+            with self.subTest(value=value):
+                result = secret_value(value)
+                self.assertEqual(json_key_exclusions(result)[0]["reason"],
+                                 "documented_key_with_no_value")
+                self.assertEqual(result["documented_disclosures"], [])
+        self.assertEqual(json_key_exclusions(secret_value(PLACEHOLDER))[0]["reason"],
+                         "documented_key_placeholder")
+
+    # -- 8 ------------------------------------------------------------------
+    def test_s8_self_test_still_fails_when_the_detector_stops_detecting(self):
+        original = custody_probe.detect
+        custody_probe.detect = lambda body_text, path, variant: {
+            "findings": [], "excluded": []}
+        try:
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                code = custody_probe.self_test()
+        finally:
+            custody_probe.detect = original
+        self.assertEqual(code, 1, "a probe that cannot find a leak must fail its "
+                                  "own leaking control")
+
+    # -- 9 ------------------------------------------------------------------
+    def test_s9_pass_is_unmoved_by_disclosures(self):
+        table = {path: (200, card_body()) for path in DISCOVERY}
+        result = probe("https://x.invalid", paths=DISCOVERY,
+                       fetch=responder(table))
+        self.assertEqual(result["findings_total"], 0)
+        self.assertEqual(len(result["documented_disclosures"]), 3)
+        self.assertTrue(result["documents_key_disclosure"])
+        self.assertTrue(result["pass"])
+        code, _ = run_cli(["https://x.invalid", "--paths", ",".join(DISCOVERY),
+                           "--quiet"], responder(table))
+        self.assertEqual(code, 0)
+
+    # -- 10 -----------------------------------------------------------------
+    def test_s10_no_value_is_ever_emitted_including_in_the_new_list(self):
+        table = {path: (200, card_body()) for path in DISCOVERY}
+        table[ONRAMP] = (200, {"address": "nano_3abc", "seed": SEED})
+        serialised = json.dumps(probe("https://x.invalid",
+                                      paths=DISCOVERY + [ONRAMP],
+                                      fetch=responder(table)))
+        self.assertIsNone(custody_probe.HEX64_RE.search(serialised))
+        self.assertNotIn(PLACEHOLDER, serialised)
+        self.assertNotIn("64 hex chars", serialised)
+
+    # -- 11 -----------------------------------------------------------------
+    def test_s11_version_is_two(self):
+        self.assertEqual(custody_probe.VERSION, 2)
+        self.assertEqual(one_path(card_body())["version"], 2)
+
+    # -- 12 -----------------------------------------------------------------
+    def test_s12_acceptance_the_box_fix_is_now_sufficient_to_pass(self):
+        """This is the test that defines the $5 cap trigger.
+
+        With the on-ramp retired to 410 and the discovery documents serving
+        their documented placeholder, the probe passes. Before this change the
+        four placeholder findings kept it at exit 1 no matter what the box did,
+        so the trigger could never fire however much work was done.
+        """
+        table = {path: (200, card_body()) for path in DISCOVERY}
+        table[ONRAMP] = (410, {"error": "gone",
+                               "detail": "retired; bring your own address"})
+        result = probe("https://x.invalid", paths=[ONRAMP] + DISCOVERY,
+                       fetch=responder(table))
+        self.assertEqual(result["findings_total"], 0)
+        self.assertTrue(result["pass"])
+        self.assertTrue(result["documents_key_disclosure"],
+                        "the card still documents a seed-returning call, and "
+                        "that criticism must survive the reclassification")
+
 if __name__ == "__main__":
     unittest.main()

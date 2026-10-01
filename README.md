@@ -103,6 +103,13 @@ order to print `"proven": true`, so an agent following our own instructions got 
 result for the one behaviour that disqualifies us. This tool is that mistake corrected in
 the opposite direction.
 
+Two lists, and they answer different questions. `findings` is key material the probe
+**observed**; `documented_disclosures` is a key *name* documented with a placeholder value —
+`{"seed": "<64 hex chars>"}` is a schema, not a secret, and counting it as a finding would make
+the probe cry wolf at exactly the audience that checks. Only `findings` moves `pass`.
+`documents_key_disclosure` still flags that our agent card describes a seed-returning call,
+because that is a real criticism of us and reclassifying it must not bury it.
+
 **Run it against us. If it exits 1, we have not earned the answer we give on custody yet.**
 
 As of 2026-09-30 it exits `1`, and that is the point of publishing it rather than a reason

@@ -69,7 +69,7 @@ import urllib.parse  # pure text; `urllib.request` is imported only in default_f
 
 #: Bumped when the shape of the result document changes, so an outside agent
 #: diffing two runs can tell a schema change from a behaviour change.
-VERSION = 1
+VERSION = 2
 
 #: Past this the probe truncates and refuses to conclude, because a leak could
 #: be past the cut and "clean" would then be a guess.
@@ -127,6 +127,64 @@ KEY_BEFORE_RE = re.compile(r"[\"']([A-Za-z0-9_\-]+)[\"']\s*:")
 COMMENT_LINE_RE = re.compile(r"^\s*(//|#|\*)")
 _CAMEL_RE = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 
+#: The alphabets key material is actually encoded in. A value whose characters
+#: cannot spell a key in ANY of these is documentation, not a key.
+HEX_ANY_RE = re.compile(r"\A[0-9a-fA-F]+\Z")
+BASE64ISH_RE = re.compile(r"\A[A-Za-z0-9+/]{40,}={0,2}\Z")
+NANO_BASE32_BODY_RE = re.compile(r"\A[13456789abcdefghijkmnopqrstuwxyz]{52,60}\Z")
+XPRV_RE = re.compile(r"\Axprv[A-Za-z0-9]{20,}\Z")
+#: Exactly 12 or exactly 24 lowercase words, single-space separated. The
+#: `bip39_shape` detector below is deliberately looser (12 OR MORE); this one
+#: is the question "is this string a phrase", not "does this body contain one".
+BIP39_EXACT_RE = re.compile(
+    r"\A[a-z]{3,8}(?: [a-z]{3,8}){11}\Z|\A[a-z]{3,8}(?: [a-z]{3,8}){23}\Z")
+
+
+def could_be_key_material(value):
+    """True unless the value cannot be any encoding of a key.
+
+    Conservative by construction, and the direction matters: this may only
+    ever exclude a value that is NOT EXPRESSIBLE in the alphabets key material
+    uses. Length alone never excludes - `"ab"` is two characters of hex and
+    comes back True - and no pattern of ours is ever consulted, so an origin
+    cannot learn what to avoid by reading this.
+
+    The whole inference is: can these characters be an encoding of a key? A
+    value holding `<`, `>`, `{`, `}`, `_`, `.`, an ellipsis, a comma, or
+    interior whitespace that is not a phrase separator is not hex, not base32,
+    not base64 and not BIP-39, so it is not a key in any encoding. That is a
+    closed inference, which is what makes it safe to draw.
+
+    This line was already drawn once, two cases short: `{"seed": null}` is
+    excluded as `documented_key_with_no_value` because it is a schema and not a
+    key. `{"seed": "<64 hex chars>"}` is the same document saying the same
+    thing at greater length.
+
+    Note on the spec: `agent-tool-custody-probe-shape.md` writes the hex branch
+    as `^[0-9a-fA-F]{32,}$`, which would exclude a short hex value - but its
+    own test 4 requires `"ab"` to stay a finding, and the docstring it
+    specifies says length never excludes. Two of its three statements agree, so
+    the length floor is treated as the error and hex matches at any length.
+    Reported rather than resolved quietly; the conservative reading also loses
+    nothing, because a short hex value stays a finding.
+    """
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return True
+    if not isinstance(value, str):
+        return False
+    candidate = value.strip()
+    if not candidate:
+        return False
+    return bool(
+        HEX_ANY_RE.match(candidate)
+        or BASE64ISH_RE.match(candidate)
+        or NANO_BASE32_BODY_RE.match(candidate)
+        or XPRV_RE.match(candidate)
+        or BIP39_EXACT_RE.match(candidate)
+    )
+
 NOTES = [
     "A finding names where key material was found and how long it was. The "
     "value itself is never reported, written or stored.",
@@ -136,6 +194,11 @@ NOTES = [
     "This says only that the origin served no key material on these paths, "
     "under these variants, at this time. It cannot prove a negative about "
     "paths it was not given.",
+    "A key name documented with a placeholder value is reported under "
+    "documented_disclosures, not as a finding: the probe did not observe key "
+    "material. An origin whose documentation promises to send you a seed is "
+    "still telling you something, and documents_key_disclosure is where it "
+    "says so.",
 ]
 
 
@@ -264,20 +327,31 @@ def detect(body_text, path, variant):
                     "reason": "documented_key_with_no_value",
                     "variant": variant,
                 })
-            elif isinstance(value, str):
-                findings.append({
-                    "pattern": "json_key",
-                    "json_path": json_path,
-                    "value_length": len(value),
-                    "variant": variant,
-                })
-            elif isinstance(value, int):
-                findings.append({
-                    "pattern": "json_key",
-                    "json_path": json_path,
-                    "value_length": len(str(value)),
-                    "variant": variant,
-                })
+            elif isinstance(value, (str, int)):
+                # One decision point for every non-empty value, strings and
+                # integers alike: an integer is always capable of being key
+                # material, so routing it through the same predicate changes
+                # no verdict and leaves the predicate with no dead branch to
+                # rot in. A key NAME documented with a placeholder value is
+                # not discarded - an origin whose docs promise to send you a
+                # seed is still telling you something, and
+                # `documented_disclosures` is where it says so.
+                length = len(value) if isinstance(value, str) else len(str(value))
+                if could_be_key_material(value):
+                    findings.append({
+                        "pattern": "json_key",
+                        "json_path": json_path,
+                        "value_length": length,
+                        "variant": variant,
+                    })
+                else:
+                    excluded.append({
+                        "pattern": "json_key",
+                        "json_path": json_path,
+                        "value_length": length,
+                        "reason": "documented_key_placeholder",
+                        "variant": variant,
+                    })
 
     # -- hex64 -------------------------------------------------------------
     for match in HEX64_RE.finditer(body_text):
@@ -467,6 +541,7 @@ def probe(origin, *, fetch=None, timeout=10.0, paths=None):
     path_results = []
     seen_locations = set()
     findings_total = 0
+    disclosures = []
 
     for path in path_list:
         entry = {"path": path, "state": None, "status": None, "variants": {}, "excluded": []}
@@ -511,6 +586,18 @@ def probe(origin, *, fetch=None, timeout=10.0, paths=None):
                 "findings": found["findings"],
             }
         entry["excluded"] = sorted(excluded_seen.values(), key=_finding_sort_key)
+        for item in entry["excluded"]:
+            if item.get("reason") != "documented_key_placeholder":
+                continue
+            variants = item.get("variants") or [None]
+            disclosures.append({
+                "path": path,
+                "pattern": item.get("pattern"),
+                "json_path": item.get("json_path"),
+                "value_length": item.get("value_length"),
+                "reason": item.get("reason"),
+                "variant": variants[0],
+            })
         path_results.append(entry)
 
     if path_list and all(p["state"] == "server_error" for p in path_results):
@@ -536,6 +623,8 @@ def probe(origin, *, fetch=None, timeout=10.0, paths=None):
         "paths": path_results,
         "findings_total": findings_total,
         "serves_no_key_material": findings_total == 0,
+        "documented_disclosures": disclosures,
+        "documents_key_disclosure": bool(disclosures),
         "pass": passed,
         "errors": errors,
         "notes": list(NOTES),
