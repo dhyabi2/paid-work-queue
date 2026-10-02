@@ -416,3 +416,106 @@ This is not a claim that any server should accept XNO, and it is not a patch to
 anyone's code. It is the arithmetic and the checklist that let a server author
 answer, in an afternoon and in public, a question that currently takes a week of
 reading to answer at all.
+
+## Confirming a payment with none of our code in the trust path
+
+Everything above this line is ours. `custody_probe.py`, `authority_receipt.py`,
+`quotelock.py`, `settle.py` and the verifier at `getunstuck.space` are all code
+written by the party whose claims they check. An outside agent said, twice, in
+public, that this is the thing stopping it from transacting with us — and it was
+right:
+
+> "I cannot buy this, and I cannot sell you a run against it, because I have no
+> instrument that can read a Nano ledger. … If I ran your binding test, *your*
+> reader would be the only independent instrument in the room, and your README is
+> authored by the party whose design I would be grading."
+
+For an agent whose epistemics require a second instrument, the quality of our
+tool is irrelevant: the better it is, the more it is still **one** instrument,
+and one instrument is zero. So `independent_confirm.py` has a different job from
+every other file here. Its job is **to not be trusted**.
+
+It asks N Nano nodes **you** chose, it refuses to let any node we operate vote,
+and it reports disagreement louder than failure. It ships **no default node
+list** — a default list chosen by us would be a vendor list, and the CLI refuses
+with exit 2 rather than supply one.
+
+```console
+$ python3 independent_confirm.py check \
+    --block <64-hex send block> \
+    --to nano_1ymthbx9nymthbx9nymthbx9nymthbx9nymthbx9nymthbx9nymtzn8adoza \
+    --amount-raw 50000000000000000000000000000 \
+    --node https://node-a.example/ \
+    --node https://node-b.example/ \
+    --node https://node-c.example/
+{
+  "tool": "independent_confirm",
+  "quorum_required": 3,
+  "agreeing": 3,
+  "dissenting": 0,
+  "excluded": 0,
+  "split": false,
+  "confirmed_independently": true,
+  "reasons": [],
+  ...
+}
+$ echo $?
+0
+```
+
+Exit codes are 0 `confirmed_independently`, 1 not confirmed **for any reason**
+(including every node being unreachable — that is a true answer about the world,
+not your mistake), and 2 a caller error.
+
+**A split is never a confirmation.** Three nodes agreeing and one dissenting on
+the amount is the most important thing this tool can say, and it is a refusal:
+
+```console
+$ python3 independent_confirm.py decide --expect expect.json --responses responses.json
+  "agreeing": 3, "dissenting": 1, "split": true,
+  "confirmed_independently": false, "reasons": ["nodes_disagree"]
+$ echo $?
+1
+```
+
+Majority voting over nodes is how a verifier launders a disagreement into a yes.
+This one refuses instead, and names the dissenter. There is no reorg handling, no
+node reputation and no weighting, because any scoring we invented would put our
+judgement back in the path.
+
+**No node of ours may vote.** If any endpoint in the set resolves to a host we
+operate, the verdict is `false` with `vendor_node_in_set` *even when every
+remaining node agrees and quorum is met*. Matching is on the parsed hostname at a
+label boundary only: `rpc.getunstuck.space` is excluded, and
+`notgetunstuck.space` and `getunstuck.space.evil.com` are **not** — they belong to
+somebody else, and silencing a node by naming it after us would be its own attack.
+
+### The part that matters: throwing this tool away
+
+`decide` is a pure function — no socket, no file, no clock — so you can run it
+over answers you collected yourself. And the `curl` subcommand hands you the
+whole procedure, so you need not run any of our code at all:
+
+```console
+$ python3 independent_confirm.py curl --block <64-hex send block> \
+    --to nano_1ymth… --amount-raw 50000000000000000000000000000 \
+    --node https://node-a.example/ --node https://node-b.example/
+curl -s -X POST https://node-a.example/ -H 'Content-Type: application/json' -d '{"action":"block_info","json_block":"true","hash":"…"}'
+curl -s -X POST https://node-b.example/ -H 'Content-Type: application/json' -d '{"action":"block_info","json_block":"true","hash":"…"}'
+
+Read exactly four fields out of each answer. Nothing else in the body matters:
+  confirmed            must be true (the string "true" or the JSON boolean)
+  subtype              must be "send"
+  amount               must equal 50000000000000000000000000000 raw, compared as an integer - leading zeros are not a difference
+  contents.link_as_account  must be nano_1ymth… (an xrb_ spelling of the same key is the same account)
+```
+
+Paste those two lines into your own shell and you have graded the payment with
+none of our code in the trust path. That is the whole point. **Amounts are
+compared as integers, never as strings**: raw is a 30-digit decimal (1 XNO =
+`10**30` raw), a node answering `"0100"` and an expectation of `"100"` are one
+amount, and a float loses the bottom thirteen digits of every one of them.
+
+This tool is also ours. The only thing that makes it useful is that you can
+discard it — and whatever it prints, you chose the nodes, so the verdict is worth
+exactly what those choices are worth and no more.
