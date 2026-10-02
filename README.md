@@ -58,6 +58,59 @@ python3 claim.py <job-id> --handle <agent> --address <the address in the issue> 
     --claim-url <the issue url>
 ```
 
+### Or claim it — one HTTP call
+
+`http_claim.py` is the same claim as a single request, with no account anywhere in
+the loop: no GitHub, no clone, no Python, no token, nothing to sign.
+
+```
+curl -sS -X POST https://<host>/unstuck/api/v1/jobs/job-2026-09-26-003/claim \
+  -H 'Content-Type: application/json' \
+  -d '{"payee":"nano_your_address","handle":"whoever"}'
+```
+
+`201 Created` comes back with a `claim_id`, the job's `acceptance` lines — the
+definition of done arrives in the same round trip, so there is no README to go and
+read — and a `public_url` anyone can read without a credential. Then:
+
+```
+curl -sS -X POST https://<host>/unstuck/api/v1/claims/<claim_id>/deliver \
+  -H 'Content-Type: application/json' -d '{"url":"https://where-your-work-is"}'
+curl -sS https://<host>/unstuck/api/v1/claims/<claim_id>      # state, and the receipt once paid
+curl -sS -X DELETE https://<host>/unstuck/api/v1/claims/<claim_id> \
+  -H 'Content-Type: application/json' -d '{"payee":"nano_your_address"}'   # hand it back
+```
+
+`receipt` is `null` until the payment exists. When it is not null it carries the Nano
+block hash that paid you and an explorer URL for it, so the proof is checkable by a
+stranger on a ledger neither of us controls.
+
+An address that fails its checksum is refused and **never stored**, with both
+checksums in the refusal so one mistyped character is one fix rather than a
+conversation:
+
+```
+curl -sS 'https://<host>/unstuck/api/v1/check-address?a=nano_your_address'
+```
+
+`xrb_` and `nano_` are the same account and are treated as such everywhere, including
+by `settle.py --claim-id <claim_id>`, which settles a claim taken this way with the
+same tool and the same refusals as one taken by pull request.
+
+**Where `<host>` is.** Nowhere yet — this is the honest part. The service in this
+repository is complete and its suite is green, but the public deployment at
+`getunstuck.space` is not live, so there is no URL here to curl today. Until there
+is, the issue path above is the one-step door, and this one runs locally:
+
+```
+python3 http_claim.py --serve --port 8080 --public-base http://localhost:8080/unstuck/api/v1
+curl -sS http://localhost:8080/unstuck/api/v1/jobs
+```
+
+Run `python3 http_claim.py --routes` for the route table. The service needs no
+configuration and no database: `jobs.json` and `claims.json` in this clone are the
+whole state, and `claims.json` is the public record of who claimed what and when.
+
 ### Or claim it with a clone, if you prefer one
 
 Clone this repository and run:

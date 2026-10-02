@@ -313,7 +313,7 @@ def build_receipt(job, job_id, address, block_hash, node_url, delivery_url,
 # --------------------------------------------------------------------------
 
 def settle(root, job_id, block_hash, delivery_url, node_url, node=None,
-           dry_run=False, as_json=False, out=sys.stdout):
+           dry_run=False, as_json=False, out=sys.stdout, expected_payee=None):
     if not HASH_RE.match(block_hash or ""):
         raise Refused(EXIT_USAGE, "--block-hash must be 64 hex characters")
     block_hash = block_hash.upper()
@@ -338,6 +338,15 @@ def settle(root, job_id, block_hash, delivery_url, node_url, node=None,
 
     job = find_job(jobs_document, job_id)
     address = check_job_is_settleable(job, job_id, receipts_document)
+    if expected_payee is not None and address != expected_payee:
+        # The claim and the job disagree about who gets paid. Whichever is
+        # right, paying either without finding out is how money goes to the
+        # wrong account, so this refuses and names both.
+        raise Refused(
+            EXIT_MISMATCH,
+            "the claim says pay %s and job %s says pay %s - they must be the "
+            "same account before anything is recorded"
+            % (expected_payee, job_id, address))
     if looks_like_a_key(job.get("claimed_by")):
         raise Refused(EXIT_USAGE, "that looks like a key or seed - refusing")
 
@@ -423,12 +432,74 @@ class _Collector:
         pass
 
 
+CLAIMS_FILE = "claims.json"
+
+
+def resolve_claim(root, claim_id):
+    """(job_id, payee) for a claim taken over HTTP, or raise Refused.
+
+    A claim made at `POST /unstuck/api/v1/jobs/{id}/claim` is recorded in
+    claims.json rather than by pull request, so the operator settling it has no
+    job id in front of them - only the claim id the agent was handed. This
+    resolves one to the other and then hands the normal path the same two facts
+    it always had, so a claim taken over HTTP settles with the same tool and
+    the same refusals - including the checksum refusal - as one taken by pull
+    request.
+    """
+    path = os.path.join(root, CLAIMS_FILE)
+    try:
+        with open(path, "rb") as handle:
+            document = json.loads(handle.read().decode("utf-8"))
+    except FileNotFoundError:
+        raise Refused(
+            EXIT_NO_FILE,
+            "%s not found - there are no HTTP claims to settle in this clone"
+            % CLAIMS_FILE) from None
+    except ValueError as exc:
+        raise Refused(EXIT_NO_FILE, "%s is malformed: %s" % (CLAIMS_FILE, exc)) from None
+
+    claims = document.get("claims")
+    if not isinstance(claims, list):
+        raise Refused(EXIT_NO_FILE, "%s is malformed: no 'claims' list" % CLAIMS_FILE)
+    for claim in claims:
+        if isinstance(claim, dict) and claim.get("claim_id") == claim_id:
+            break
+    else:
+        raise Refused(EXIT_NO_SUCH_JOB,
+                      "no claim %r in %s" % (claim_id, CLAIMS_FILE))
+
+    payee = claim.get("payee")
+    verdict = nanoaddr.validate(payee or "")
+    if not verdict["valid"]:
+        # http_claim.py never stores an address that fails checksum, so this is
+        # a claims.json that was edited by hand or corrupted. Refusing here
+        # keeps the one rule that matters: an address that fails its checksum
+        # is never paid to.
+        raise Refused(
+            EXIT_WRONG_STATE,
+            "claim %s carries a payee that fails its checksum (%s) - it was "
+            "never payable" % (claim_id, verdict["reason"]))
+    job_id = claim.get("job_id")
+    if not isinstance(job_id, str) or not job_id:
+        raise Refused(EXIT_WRONG_STATE,
+                      "claim %s names no job" % claim_id)
+    # Normalised on both sides. The two prefixes name the same account, and on
+    # 2026-09-27 this file compared them as strings - so an xrb_-spelled payee
+    # could never be settled, found after the money had gone irreversibly.
+    return job_id, verdict["normalised"]
+
+
 def build_parser():
     parser = argparse.ArgumentParser(
         prog="settle.py",
         description="Record a payment that already happened. This tool cannot make one.",
     )
-    parser.add_argument("job_id")
+    parser.add_argument("job_id", nargs="?",
+                        help="the id of the job being settled; omit it when "
+                             "--claim-id names an HTTP claim")
+    parser.add_argument("--claim-id",
+                        help="settle the job held by this claim (clm_...), "
+                             "taken over HTTP rather than by pull request")
     parser.add_argument("--block-hash", required=False, default="",
                         help="the 64-hex hash of the send block")
     parser.add_argument("--delivery-url", default="",
@@ -446,9 +517,23 @@ def main(argv=None, out=None, err=None, root=HERE, node=None):
     err = sys.stderr if err is None else err
     args = build_parser().parse_args(argv)
     try:
-        return settle(root, args.job_id, args.block_hash, args.delivery_url,
+        job_id, expected_payee = args.job_id, None
+        if args.claim_id:
+            resolved, expected_payee = resolve_claim(root, args.claim_id)
+            if job_id and job_id != resolved:
+                raise Refused(
+                    EXIT_USAGE,
+                    "claim %s is against job %s, not %s - settle the job the "
+                    "claim names or drop the positional argument"
+                    % (args.claim_id, resolved, job_id))
+            job_id = resolved
+        if not job_id:
+            raise Refused(EXIT_USAGE,
+                          "give a job id, or --claim-id to settle an HTTP claim")
+        return settle(root, job_id, args.block_hash, args.delivery_url,
                       args.node, node=node, dry_run=args.dry_run,
-                      as_json=args.as_json, out=out)
+                      as_json=args.as_json, out=out,
+                      expected_payee=expected_payee)
     except Refused as refusal:
         print(refusal.message, file=err)
         return refusal.code

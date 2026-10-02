@@ -677,5 +677,124 @@ class Spellings(SettleFixture):
         self.assertEqual(self.all_bytes(), before)
 
 
+class SettleAnHttpClaim(SettleFixture):
+    """--claim-id: the same tool and the same refusals for the other door.
+
+    A claim taken at POST /unstuck/api/v1/jobs/{id}/claim lands in claims.json,
+    not in a pull request, so the operator settling it holds a claim id and no
+    job id. These pin that the HTTP door reaches the same settlement path -
+    including the refusal that matters most, which is an address mismatch.
+    """
+
+    def write_claims(self, *claims):
+        self.write_json("claims.json", {"claims": list(claims)})
+
+    def claim_record(self, claim_id="clm_0000000a", job_id="job-1", payee=SELLER,
+                     **over):
+        body = {
+            "claim_id": claim_id,
+            "job_id": job_id,
+            "handle": "an-agent",
+            "payee": payee,
+            "state": "delivered",
+            "claimed_at": "2026-09-27T06:00:00Z",
+            "expires": FUTURE,
+            "delivered_at": "2026-09-27T06:10:00Z",
+            "paid_at": None,
+            "delivery_url": "https://example.invalid/work",
+            "price_xno": PRICE_XNO,
+            "price_raw": PRICE_RAW,
+            "receipt": None,
+            "reconciled": False,
+        }
+        body.update(over)
+        return body
+
+    def settle_claim(self, claim_id="clm_0000000a", node=None, extra=()):
+        node = node or nanonode.FakeNode({block_hash(): send_block()})
+        return self.run_settle("--claim-id", claim_id,
+                               "--block-hash", block_hash(),
+                               "--delivery-url", "https://example.invalid/work",
+                               "--node", "https://node.invalid/proxy",
+                               *extra, node=node)
+
+    def test_13_a_claim_id_resolves_the_job_and_settles_it(self):
+        self.tree([job()])
+        self.write_claims(self.claim_record())
+        code, out, err = self.settle_claim()
+        self.assertEqual(code, 0, err)
+        receipts = json.loads(self.bytes_of("receipts.json").decode())["receipts"]
+        self.assertEqual(len(receipts), 1)
+        self.assertEqual(receipts[0]["job_id"], "job-1")
+        self.assertEqual(receipts[0]["paid_to"], SELLER)
+
+    def test_13b_an_xrb_spelled_claim_settles_a_nano_spelled_job(self):
+        """The 2026-09-27 defect, pinned at the claim layer.
+
+        The two prefixes name one account. This file used to compare them as
+        strings, so an xrb_-spelled payee could never be settled - and that was
+        found after the money had gone irreversibly.
+        """
+        self.tree([job(payout_address=SELLER)])
+        self.write_claims(self.claim_record(payee=SELLER_XRB))
+        code, _, err = self.settle_claim()
+        self.assertEqual(code, 0, err)
+        receipts = json.loads(self.bytes_of("receipts.json").decode())["receipts"]
+        self.assertEqual(receipts[0]["paid_to"], SELLER)
+
+    def test_13c_a_claim_naming_a_different_payee_is_refused_and_writes_nothing(self):
+        self.tree([job(payout_address=SELLER)])
+        self.write_claims(self.claim_record(payee=STRANGER))
+        before = self.all_bytes()
+        code, _, err = self.settle_claim()
+        self.assertEqual(code, 9, err)
+        self.assertIn(STRANGER, err)
+        self.assertIn(SELLER, err)
+        self.assertEqual(self.all_bytes(), before)
+
+    def test_13d_a_claim_id_contradicting_the_positional_job_is_a_usage_error(self):
+        self.tree([job(), job(job_id="job-2")])
+        self.write_claims(self.claim_record(job_id="job-1"))
+        before = self.all_bytes()
+        code, _, err = self.run_settle(
+            "job-2", "--claim-id", "clm_0000000a",
+            "--block-hash", block_hash(), "--delivery-url",
+            "https://example.invalid/work", "--node", "https://node.invalid")
+        self.assertEqual(code, 2, err)
+        self.assertEqual(self.all_bytes(), before)
+
+    def test_13e_an_unknown_or_unreadable_claim_refuses_before_the_node(self):
+        self.tree([job()])
+        self.write_claims(self.claim_record())
+        before = self.all_bytes()
+        code, _, err = self.settle_claim(claim_id="clm_ffffffff")
+        self.assertEqual(code, 3, err)
+        self.assertEqual(self.all_bytes(), before)
+
+        os.remove(os.path.join(self.dir, "claims.json"))
+        code, _, err = self.settle_claim()
+        self.assertEqual(code, 5, err)
+        self.assertEqual(self.all_bytes(), before)
+
+    def test_13f_a_claim_payee_that_fails_checksum_is_never_paid_to(self):
+        """claims.json edited by hand is the only way to get here - still refuse."""
+        self.tree([job()])
+        self.write_claims(self.claim_record(payee=SELLER[:-1] + "a"))
+        before = self.all_bytes()
+        code, _, err = self.settle_claim()
+        self.assertEqual(code, 4, err)
+        self.assertIn("checksum", err)
+        self.assertEqual(self.all_bytes(), before)
+
+    def test_13g_neither_a_job_id_nor_a_claim_id_is_a_usage_error(self):
+        self.tree([job()])
+        before = self.all_bytes()
+        code, _, err = self.run_settle(
+            "--block-hash", block_hash(), "--delivery-url",
+            "https://example.invalid/work", "--node", "https://node.invalid")
+        self.assertEqual(code, 2, err)
+        self.assertEqual(self.all_bytes(), before)
+
+
 if __name__ == "__main__":
     unittest.main()
