@@ -742,6 +742,22 @@ class SettleAnHttpClaim(SettleFixture):
         receipts = json.loads(self.bytes_of("receipts.json").decode())["receipts"]
         self.assertEqual(receipts[0]["paid_to"], SELLER)
 
+    def test_13b2_a_nano_spelled_claim_settles_an_xrb_spelled_job(self):
+        """The mirror of 13b, which the claim layer alone does not cover.
+
+        `resolve_claim` normalises the claim's payee, so the claim side is
+        always the `nano_` spelling. The job side is not normalised by anyone:
+        `check_job_is_settleable` returns `payout_address` exactly as jobs.json
+        spells it. A legacy-spelled job and a modern-spelled claim name one
+        account, and this is the same defect as 13b with the operands swapped.
+        """
+        self.tree([job(payout_address=SELLER_XRB)])
+        self.write_claims(self.claim_record(payee=SELLER))
+        code, _, err = self.settle_claim()
+        self.assertEqual(code, 0, err)
+        receipts = json.loads(self.bytes_of("receipts.json").decode())["receipts"]
+        self.assertEqual(receipts[0]["paid_to"], SELLER)
+
     def test_13c_a_claim_naming_a_different_payee_is_refused_and_writes_nothing(self):
         self.tree([job(payout_address=SELLER)])
         self.write_claims(self.claim_record(payee=STRANGER))

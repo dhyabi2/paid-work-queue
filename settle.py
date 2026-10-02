@@ -338,7 +338,13 @@ def settle(root, job_id, block_hash, delivery_url, node_url, node=None,
 
     job = find_job(jobs_document, job_id)
     address = check_job_is_settleable(job, job_id, receipts_document)
-    if expected_payee is not None and address != expected_payee:
+    if expected_payee is not None and not same_account(address, expected_payee):
+        # By account, not by spelling - `same_account`, like interrogate() below,
+        # because the claim side is normalised by resolve_claim and the job side
+        # is whatever jobs.json spells. Comparing the two as strings refused a
+        # legacy-spelled job paid by a modern-spelled claim: one account, two
+        # spellings, and the buyer's money had already moved.
+        #
         # The claim and the job disagree about who gets paid. Whichever is
         # right, paying either without finding out is how money goes to the
         # wrong account, so this refuses and names both.

@@ -246,6 +246,39 @@ class Contention(Base):
         self.assertIsNone(job_after["claim_url"])
 
 
+    def test_07b_release_matches_by_account_not_by_spelling(self):
+        """Claimed with `nano_`, released with `xrb_`: one account, one agent.
+
+        The claim is stored normalised, so only the offered side can carry the
+        legacy spelling - and refusing it would lock the rightful claimant out
+        of their own claim with the one credential there is.
+        """
+        service = self.service()
+        status, created = self.claim(service)
+        self.assertEqual(status, 201)
+        legacy = xrb_spelling(GENESIS)
+        self.assertTrue(legacy.startswith("xrb_"))
+
+        status, payload = service.handle(
+            "DELETE", "/unstuck/api/v1/claims/%s" % created["claim_id"],
+            json.dumps({"payee": legacy}).encode("utf-8"))
+        self.assertEqual(status, 200, payload)
+        self.assertEqual(payload["state"], "released")
+        self.assertEqual(self.read_file("jobs.json")["jobs"][0]["state"], "open")
+
+    def test_07c_release_refuses_an_address_that_is_not_one(self):
+        """`same_account` must not treat two unreadable values as a match."""
+        service = self.service()
+        status, created = self.claim(service)
+        self.assertEqual(status, 201)
+        status, payload = service.handle(
+            "DELETE", "/unstuck/api/v1/claims/%s" % created["claim_id"],
+            json.dumps({"payee": "nano_not_an_address"}).encode("utf-8"))
+        self.assertEqual(status, 403)
+        self.assertEqual(payload["error"], "payee_mismatch")
+        self.assertEqual(self.read_file("jobs.json")["jobs"][0]["state"], "claimed")
+
+
 class Delivery(Base):
 
     def test_08_deliver_records_but_does_not_assert_payment(self):

@@ -53,10 +53,12 @@ import secrets
 import sys
 import threading
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "vendor"))
 
 import money  # noqa: E402
 import nanoaddr  # noqa: E402
+from canonical import same_account  # noqa: E402  - one comparison, not three
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -667,11 +669,11 @@ class ClaimService:
         with self._lock:
             claims_document = self._claims()
             claim = self._find_claim(claims_document, claim_id)
-            # Normalised on both sides: an agent that claimed with `xrb_` and
-            # releases with `nano_` is the same agent and the same account.
-            verdict = nanoaddr.validate(offered)
-            normalised = verdict["normalised"] if verdict["valid"] else None
-            if normalised != claim.get("payee"):
+            # By account, not by spelling: an agent that claimed with `xrb_`
+            # and releases with `nano_` is the same agent and the same account.
+            # `same_account` refuses an unreadable address on either side, so an
+            # offered address that is not one still falls through to the 403.
+            if not same_account(offered, claim.get("payee")):
                 raise Refused(403, "payee_mismatch",
                               "That is not the address this claim was made "
                               "with, and matching it is the only credential "
