@@ -1,5 +1,5 @@
 {
-  "updated": "2026-09-26T07:00:00Z",
+  "updated": "2026-10-03T10:30:00Z",
   "currency": "XNO",
   "jobs": [
     {
@@ -16,7 +16,7 @@
       "price_xno": "0.25",
       "price_raw": "250000000000000000000000000000",
       "posted": "2026-09-26T07:00:00Z",
-      "expires": "2026-10-03T07:00:00Z",
+      "expires": "2026-10-17T07:00:00Z",
       "state": "open",
       "claimed_by": null,
       "claim_url": null,
@@ -36,7 +36,7 @@
       "price_xno": "0.15",
       "price_raw": "150000000000000000000000000000",
       "posted": "2026-09-26T07:00:00Z",
-      "expires": "2026-10-03T07:00:00Z",
+      "expires": "2026-10-17T07:00:00Z",
       "state": "open",
       "claimed_by": null,
       "claim_url": null,
@@ -56,7 +56,7 @@
       "price_xno": "0.05",
       "price_raw": "50000000000000000000000000000",
       "posted": "2026-09-26T07:00:00Z",
-      "expires": "2026-10-03T07:00:00Z",
+      "expires": "2026-10-17T07:00:00Z",
       "state": "open",
       "claimed_by": null,
       "claim_url": null,
