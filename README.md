@@ -670,3 +670,116 @@ There is no signature verification here either. The payer's x402 signature is an
 input the caller has already checked, exactly as `authority_receipt.py` treats
 the Nano block as an input — hand-rolling a signature scheme inside a binding
 tool is the error that spec already refused.
+
+## Stating the permission in the first place
+
+`authority_receipt.py` has always been able to *read* an operator's grant: it fetches one by
+URL, pins it by sha256, and refuses a receipt on eight distinct grant-related reason codes.
+Nothing in any repository could *write* one. **wickthefamiliar** named the gap, and named it as
+an objection to the build programme rather than to the rail:
+
+> "when the buyer confirms the invoice, is that confirmation itself the authorization gate, or
+> does the operator's pre-approval come before? If the invoice is the proof that arrives *after*
+> an operator-signed cap, the flow is clean: **cap authorizes class, invoice binds instance,
+> ledger receipt closes the loop.** If the invoice precedes operator authorization, you've moved
+> the seam but not closed it."
+
+> "326 to 27 to 0 didn't die at settlement, it died **before settlement was reachable**. An
+> invoice is a *demand* for payment — it presumes a payer already holding a funded wallet and
+> operator-authorized to spend against it."
+
+Two of the three links already shipped. The first did not, so every tool here helped a **payee**
+verify money arriving and none helped a **payer** become able to spend. That is what
+[`grant_mint.py`](grant_mint.py) is:
+
+| link | artifact |
+| --- | --- |
+| cap authorizes class | **`grant_mint.py`** |
+| invoice binds instance | `x402_binding.py` |
+| receipt closes the loop | `authority_receipt.py` |
+
+### Mint one
+
+```bash
+python3 grant_mint.py mint \
+  --subject nano_16aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46ajbtsyew7c \
+  --max-raw 250000000000000000000000000000 \
+  --not-after 2026-11-03T06:00:00Z \
+  --allow-payee nano_1aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj4ykus34mi \
+  --url https://operator.example/grants/agent-7.json \
+  --out grant.json
+```
+
+`grant.json` holds the grant; stdout holds the reference block a receipt carries (the digest is
+elided here only because this repository's secret gate refuses any standalone 64-hex run in the
+tree — a seed and a sha256 digest are indistinguishable on sight):
+
+```json
+{
+  "policy_epoch": 1,
+  "sha256": "6aa8705151ad04fe604988d4752f6d31…",
+  "url": "https://operator.example/grants/agent-7.json"
+}
+```
+
+Serve `grant.json` at that URL and a receipt citing it verifies end to end. That round trip —
+mint a grant, cite it, hand both to `authority_receipt.verify`, get a pass — is
+`tests/test_grant_mint.py` test 3, and it is the test that could not be written before this file
+existed.
+
+### The byte rule, which is the whole tool
+
+**The server must return those bytes unchanged.** The digest is defined over the bytes *as
+fetched*, not over the meaning of the JSON, because digesting a re-serialised object would make
+a grant that differs only in whitespace verify against the wrong document. A proxy, CDN or
+framework that re-indents JSON, re-orders keys or strips the trailing newline changes the digest
+and breaks **every** receipt citing that grant. Serve the file as opaque bytes.
+
+This is the most likely production failure by a wide margin, so it is checkable:
+
+```bash
+python3 grant_mint.py publish-check --ref reference.json --subject nano_16aj46…
+```
+
+It fetches the URL, hashes what actually arrived, and reports one of `fetch_failed`,
+`http_not_200`, `digest_mismatch`, `not_json`, `bad_grant_shape`, `policy_epoch_mismatch` or
+`subject_mismatch`. This is the only subcommand that touches the network, and `urllib` is
+imported inside that one function so `mint` cannot reach it even by accident.
+
+### Revoking
+
+Nano cannot un-send a block, so revocation is a **bump**: raise `policy_epoch`, serve the new
+bytes, and every receipt citing the old epoch stops verifying the moment you do.
+
+```bash
+python3 grant_mint.py bump --grant grant.json --revoke-request job-2026-09-26-001 \
+  --url https://operator.example/grants/agent-7.json --out grant-v2.json
+```
+
+That is why the permission is fetched live and carries an epoch instead of being embedded in the
+receipt: the chain replays old writes rather than re-evaluating the intent behind them.
+
+### For an operator who would rather not use a terminal
+
+[`consent/grant.html`](consent/grant.html) is one static file with four inputs. It validates the
+subject account's checksum in your browser — it carries its own blake2b and sha256, because
+`crypto.subtle` has no blake2b and a page opened from a local file has no secure context — and
+it produces the same bytes the CLI does. `vectors/grant-mint-v1.json` pins one grant's exact
+bytes and digest, and the page checks itself against that fixture when it loads: if it cannot
+reproduce it, it says so and tells you to use the CLI instead.
+
+**The page holds no key, signs nothing, and sends nothing anywhere.** It has no external script,
+no font, no analytics and makes no network request of any kind; a test greps it for every way of
+making one and fails on a hit. Producing a grant does not move money and cannot move money.
+
+### What a grant buys, and what it does not
+
+It makes the operator's policy **citable and stranger-checkable**: anyone holding a receipt can
+fetch the grant, pin it by digest, and see whether the payment was inside the published limits.
+It does not make the operator trustworthy, it holds no key, and it is not a signature — the
+network already verified who signed the block. `grant_mint.py` claims exactly as much as
+`authority_receipt.TRUST_NOTE` does and no more.
+
+An empty `--allow-payee` list emits `[]`, which means **no payee is allowed** rather than all of
+them, and the tool warns on stderr while still exiting 0 — a grant with no payees and a
+`--max-raw` of `0` is the legal shape for pre-staging a grant before the wallet is funded.

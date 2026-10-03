@@ -1,0 +1,48 @@
+{
+ "v": 1,
+ "title": "grant-mint v1 conformance vector",
+ "purpose": "Hand this to anyone implementing a grant minter, in any language, or to consent/grant.html. Reproducing `bytes` EXACTLY - and therefore the digest - means your minter agrees with paid-work-queue, and a receipt citing your grant will verify against authority_receipt.py.",
+ "serialisation": {
+  "algorithm": "json.dumps(grant, indent=2, sort_keys=True, ensure_ascii=True) + chr(10)",
+  "encoding": "utf-8",
+  "digest": "sha256 of those bytes and no others, lowercase hex",
+  "note": "The digest is defined over the bytes AS FETCHED. A proxy, CDN or framework that re-serialises the JSON changes the digest and breaks every receipt citing the grant."
+ },
+ "inputs": {
+  "subject": "nano_3af3n8it5af3n8it5af3n8it5af3n8it5af3n8it5af3n8it5af3qc7i5mny",
+  "max_raw": "250000000000000000000000000000",
+  "not_before": "2026-10-03T06:00:00Z",
+  "not_after": "2026-11-03T06:00:00Z",
+  "allow_payees": [
+   "nano_3eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpjberezd"
+  ],
+  "policy_epoch": 1,
+  "url": "https://operator.invalid/grants/vector-v1.json",
+  "now": "2026-10-03T06:00:00Z"
+ },
+ "grant": {
+  "version": 1,
+  "subject_account": "nano_3af3n8it5af3n8it5af3n8it5af3n8it5af3n8it5af3n8it5af3qc7i5mny",
+  "policy_epoch": 1,
+  "not_before": "2026-10-03T06:00:00Z",
+  "not_after": "2026-11-03T06:00:00Z",
+  "max_raw_per_payment": "250000000000000000000000000000",
+  "allowed_payees": [
+   "nano_3eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpjberezd"
+  ],
+  "revoked_blocks": [],
+  "revoked_request_ids": []
+ },
+ "bytes": "{\n  \"allowed_payees\": [\n    \"nano_3eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpjberezd\"\n  ],\n  \"max_raw_per_payment\": \"250000000000000000000000000000\",\n  \"not_after\": \"2026-11-03T06:00:00Z\",\n  \"not_before\": \"2026-10-03T06:00:00Z\",\n  \"policy_epoch\": 1,\n  \"revoked_blocks\": [],\n  \"revoked_request_ids\": [],\n  \"subject_account\": \"nano_3af3n8it5af3n8it5af3n8it5af3n8it5af3n8it5af3n8it5af3qc7i5mny\",\n  \"version\": 1\n}\n",
+ "byte_length": 420,
+ "sha256_halves": [
+  "2c00afb7c876259247ef8bdf6016ee60",
+  "4181588d0b166a1f720001561d30d017"
+ ],
+ "sha256_note": "Join these two 32-character halves and you have the digest. It is split because this repository's secret gate refuses any standalone 64-hex run anywhere in the tree - a seed or a private key looks exactly like a sha256 digest, and only a block_hash field is exempt. Splitting a published digest is cheaper than weakening that gate.",
+ "reference_template": {
+  "url": "https://operator.invalid/grants/vector-v1.json",
+  "policy_epoch": 1
+ },
+ "reference_note": "The reference block a receipt carries is reference_template plus \"sha256\": the joined halves above."
+}

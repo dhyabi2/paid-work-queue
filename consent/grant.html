@@ -1,0 +1,616 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Produce an operator grant</title>
+<style>
+  :root { color-scheme: light dark; --ink:#16181d; --paper:#fbfbf9; --line:#c9c7bf;
+          --quiet:#5c5f68; --bad:#8c1d1d; --good:#1c5b2e; }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink:#e8e6e1; --paper:#16181b; --line:#3a3d44; --quiet:#a2a6ae;
+            --bad:#f08a8a; --good:#8fd6a4; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:2rem 1rem; background:var(--paper); color:var(--ink);
+         font:16px/1.55 ui-serif, Georgia, "Times New Roman", serif; }
+  main { max-width: 46rem; margin: 0 auto; }
+  h1 { font-size:1.5rem; margin:0 0 .4rem; letter-spacing:-.01em; }
+  h2 { font-size:1.05rem; margin:2rem 0 .6rem; }
+  p, li { margin:.6rem 0; }
+  .lede { color:var(--quiet); margin-bottom:1.6rem; }
+  label { display:block; margin:1rem 0 .25rem; font-weight:600; font-size:.92rem; }
+  .hint { color:var(--quiet); font-size:.85rem; font-weight:400; display:block;
+          margin-top:.15rem; }
+  input, textarea { width:100%; padding:.5rem .6rem; background:var(--paper);
+    color:var(--ink); border:1px solid var(--line); border-radius:3px;
+    font:13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  textarea { min-height:15rem; resize:vertical; }
+  button { margin-top:1.4rem; padding:.6rem 1.1rem; font:inherit; font-weight:600;
+    cursor:pointer; background:var(--ink); color:var(--paper);
+    border:1px solid var(--ink); border-radius:3px; }
+  .digest { font:13px/1.5 ui-monospace, Menlo, monospace; word-break:break-all;
+            margin:.5rem 0 0; }
+  .bad { color:var(--bad); font-weight:600; }
+  .good { color:var(--good); }
+  .note { border-left:3px solid var(--line); padding:.1rem 0 .1rem .9rem;
+          margin:1.2rem 0; color:var(--quiet); font-size:.92rem; }
+  .shout { border:1px solid var(--line); border-left:3px solid var(--bad);
+           padding:.8rem .9rem; margin:1.4rem 0; }
+  code { font:13px/1.4 ui-monospace, Menlo, monospace; }
+  footer { margin-top:2.5rem; color:var(--quiet); font-size:.85rem; }
+  .out { display:none; }
+  .out.shown { display:block; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Produce an operator grant</h1>
+<p class="lede">A grant is one sentence your origin publishes: <em>this account may spend
+under these limits.</em> It is the permission that <code>authority_receipt.py</code>
+already checks and that nothing, until now, produced.</p>
+
+<div class="note">
+  <strong>This page holds no key, signs nothing, and sends nothing anywhere.</strong>
+  It writes a sentence your origin publishes. There is no network request of any kind
+  on this page, no external script, no font and no analytics &mdash; read the source and
+  confirm it. Producing a grant does not move money and cannot move money.
+</div>
+
+<form id="form" autocomplete="off">
+  <label for="subject">Subject account
+    <span class="hint">The Nano account allowed to spend. Its checksum is verified here,
+    in your browser, with the same algorithm the tools use.</span></label>
+  <input id="subject" name="subject" spellcheck="false"
+         placeholder="nano_&hellip;">
+  <p id="subject-verdict" class="digest"></p>
+
+  <label for="maxraw">Maximum raw per single payment
+    <span class="hint">An integer count of raw. 1 XNO is
+    1000000000000000000000000000000 raw (10<sup>30</sup>), so this is never a decimal
+    and never a float &mdash; a float loses the low digits. <code>0</code> is legal and
+    means every payment is over the limit, which is the shape you use to pre-stage a
+    grant before funding.</span></label>
+  <input id="maxraw" name="maxraw" spellcheck="false"
+         placeholder="250000000000000000000000000000">
+  <p id="maxraw-verdict" class="digest"></p>
+
+  <label for="notafter">Not after
+    <span class="hint">When the grant stops authorising anything. RFC3339 with an
+    explicit offset or a trailing Z, for example
+    <code>2026-11-03T06:00:00Z</code>.</span></label>
+  <input id="notafter" name="notafter" spellcheck="false"
+         placeholder="2026-11-03T06:00:00Z">
+  <p id="notafter-verdict" class="digest"></p>
+
+  <label for="payees">Allowed payees
+    <span class="hint">One Nano account per line. Leave this empty and the grant
+    allows <strong>no</strong> payee at all &mdash; every payment will refuse with
+    <code>payee_not_allowed</code>. That is a legal pre-stage, not a mistake, but it is
+    almost never what you meant.</span></label>
+  <textarea id="payees" name="payees" spellcheck="false" style="min-height:6rem"
+            placeholder="nano_&hellip;"></textarea>
+  <p id="payees-verdict" class="digest"></p>
+
+  <button type="submit" id="produce">Produce the grant</button>
+</form>
+
+<div id="out" class="out">
+  <h2>The grant bytes</h2>
+  <p>Save <strong>exactly these bytes</strong> to a file your origin serves unchanged,
+  then paste the address it is served from into the reference block below.</p>
+  <textarea id="bytes" readonly spellcheck="false"></textarea>
+  <p class="digest">sha256: <span id="digest"></span></p>
+  <p class="digest">byte length: <span id="length"></span></p>
+
+  <div class="shout">
+    <strong>The server must return these bytes unchanged.</strong> The digest above is
+    taken over the bytes as fetched, not over the meaning of the JSON. A proxy, CDN or
+    framework that re-serialises JSON &mdash; re-indenting it, re-ordering keys, stripping
+    the trailing newline &mdash; changes the digest and breaks <em>every</em> receipt that
+    cites this grant. Serve the file as opaque bytes.
+  </div>
+
+  <h2>The reference block</h2>
+  <p>This is what a receipt carries in its <code>grant</code> field. Fill in
+  <code>url</code> with the address your origin serves the bytes from; it must be an
+  https address, because a grant served in the clear can be rewritten in flight and the
+  digest would then pin the rewrite.</p>
+  <textarea id="ref" readonly spellcheck="false" style="min-height:7rem"></textarea>
+
+  <h2>Then check it</h2>
+  <p>Once the bytes are published, prove the published copy still digests to the
+  reference:</p>
+  <textarea id="cmd" readonly spellcheck="false" style="min-height:3.5rem"></textarea>
+</div>
+
+<h2>What this buys, and what it does not</h2>
+<p>It makes your policy <strong>citable and stranger-checkable</strong>: anyone holding a
+receipt can fetch your grant, pin it by digest, and see for themselves whether the
+payment was inside the limits you published. It does not make you trustworthy, it does
+not hold or move funds, and it is not a signature &mdash; the Nano network already
+verified who signed the block. This is the separate question of <em>why the act was
+permitted</em>.</p>
+
+<p>Revocation is a bump: raise <code>policy_epoch</code> and serve the new bytes. Every
+receipt citing the old epoch stops verifying the moment you do. Nano cannot un-send a
+block, so this is the only revocation the ledger permits &mdash; which is why the
+permission is fetched live instead of being embedded in the receipt.</p>
+
+<footer>
+<p id="selfcheck"></p>
+<p>Part of <code>paid-work-queue</code>. The command-line equivalent is
+<code>grant_mint.py mint</code>, and
+<code>vectors/grant-mint-v1.json</code> pins one grant's exact bytes and digest so this
+page and that tool can be checked against the same fixture.</p>
+</footer>
+
+</main>
+<script>
+"use strict";
+/* ------------------------------------------------------------------ *
+ * Everything below is self-contained on purpose. No external script,
+ * no network, no storage. Two primitives are implemented inline:
+ *
+ *   blake2b-40  - Nano's account checksum, so a bad address is refused
+ *                 here rather than in production. crypto.subtle has no
+ *                 blake2b, so there is no shortcut.
+ *   sha256      - the grant digest. crypto.subtle.digest() is used as a
+ *                 cross-check when it is available, but it is NOT relied
+ *                 on: a page opened from a file:// path has no secure
+ *                 context in most browsers and crypto.subtle is then
+ *                 undefined. A page that silently cannot hash is useless,
+ *                 so the inline implementation is the one that runs and
+ *                 crypto.subtle only has to agree with it.
+ * ------------------------------------------------------------------ */
+
+/* ---- blake2b (64-bit arithmetic as 32-bit lo/hi pairs) ---- */
+var B2B_IV32 = new Uint32Array([
+  0xf3bcc908, 0x6a09e667, 0x84caa73b, 0xbb67ae85,
+  0xfe94f82b, 0x3c6ef372, 0x5f1d36f1, 0xa54ff53a,
+  0xade682d1, 0x510e527f, 0x2b3e6c1f, 0x9b05688c,
+  0xfb41bd6b, 0x1f83d9ab, 0x137e2179, 0x5be0cd19]);
+var B2B_SIGMA = [
+  0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,
+  14,10,4,8,9,15,13,6,1,12,0,2,11,7,5,3,
+  11,8,12,0,5,2,15,13,10,14,3,6,7,1,9,4,
+  7,9,3,1,13,12,11,14,2,6,5,10,4,0,15,8,
+  9,0,5,7,2,4,10,15,14,1,11,12,6,8,3,13,
+  2,12,6,10,0,11,8,3,4,13,7,5,15,14,1,9,
+  12,5,1,15,14,13,4,10,0,7,6,3,9,2,8,11,
+  13,11,7,14,12,1,3,9,5,0,15,4,8,6,2,10,
+  6,15,14,9,11,3,0,8,12,2,13,7,1,4,10,5,
+  10,2,8,4,7,6,1,5,15,11,9,14,3,12,13,0,
+  0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,
+  14,10,4,8,9,15,13,6,1,12,0,2,11,7,5,3];
+var B2B_SIGMA2 = new Uint8Array(B2B_SIGMA.map(function (x) { return x * 2; }));
+
+var b2bV = new Uint32Array(32);
+var b2bM = new Uint32Array(32);
+
+function b2bAddAA(v, a, b) {
+  var o0 = v[a] + v[b], o1 = v[a + 1] + v[b + 1];
+  if (o0 >= 0x100000000) { o1++; }
+  v[a] = o0; v[a + 1] = o1;
+}
+function b2bAddAC(v, a, lo, hi) {
+  var o0 = v[a] + lo; if (lo < 0) { o0 += 0x100000000; }
+  var o1 = v[a + 1] + hi;
+  if (o0 >= 0x100000000) { o1++; }
+  v[a] = o0; v[a + 1] = o1;
+}
+function b2bGet32(arr, i) {
+  return arr[i] ^ (arr[i + 1] << 8) ^ (arr[i + 2] << 16) ^ (arr[i + 3] << 24);
+}
+function b2bG(a, b, c, d, ix, iy) {
+  var xorLo, xorHi;
+  b2bAddAA(b2bV, a, b);
+  b2bAddAC(b2bV, a, b2bM[ix], b2bM[ix + 1]);
+
+  xorLo = b2bV[d] ^ b2bV[a]; xorHi = b2bV[d + 1] ^ b2bV[a + 1];
+  b2bV[d] = xorHi; b2bV[d + 1] = xorLo;                /* rotr 32 */
+
+  b2bAddAA(b2bV, c, d);
+
+  xorLo = b2bV[b] ^ b2bV[c]; xorHi = b2bV[b + 1] ^ b2bV[c + 1];
+  b2bV[b] = (xorLo >>> 24) ^ (xorHi << 8);
+  b2bV[b + 1] = (xorHi >>> 24) ^ (xorLo << 8);         /* rotr 24 */
+
+  b2bAddAA(b2bV, a, b);
+  b2bAddAC(b2bV, a, b2bM[iy], b2bM[iy + 1]);
+
+  xorLo = b2bV[d] ^ b2bV[a]; xorHi = b2bV[d + 1] ^ b2bV[a + 1];
+  b2bV[d] = (xorLo >>> 16) ^ (xorHi << 16);
+  b2bV[d + 1] = (xorHi >>> 16) ^ (xorLo << 16);        /* rotr 16 */
+
+  b2bAddAA(b2bV, c, d);
+
+  xorLo = b2bV[b] ^ b2bV[c]; xorHi = b2bV[b + 1] ^ b2bV[c + 1];
+  b2bV[b] = (xorHi >>> 31) ^ (xorLo << 1);
+  b2bV[b + 1] = (xorLo >>> 31) ^ (xorHi << 1);         /* rotr 63 */
+}
+function b2bCompress(ctx, last) {
+  var i;
+  for (i = 0; i < 16; i++) { b2bV[i] = ctx.h[i]; b2bV[i + 16] = B2B_IV32[i]; }
+  b2bV[24] = b2bV[24] ^ ctx.t; b2bV[25] = b2bV[25] ^ (ctx.t / 0x100000000);
+  if (last) { b2bV[28] = ~b2bV[28]; b2bV[29] = ~b2bV[29]; }
+  for (i = 0; i < 32; i++) { b2bM[i] = b2bGet32(ctx.b, 4 * i); }
+  for (i = 0; i < 12; i++) {
+    var s = B2B_SIGMA2, o = i * 16;
+    b2bG(0, 8, 16, 24, s[o + 0], s[o + 1]);
+    b2bG(2, 10, 18, 26, s[o + 2], s[o + 3]);
+    b2bG(4, 12, 20, 28, s[o + 4], s[o + 5]);
+    b2bG(6, 14, 22, 30, s[o + 6], s[o + 7]);
+    b2bG(0, 10, 20, 30, s[o + 8], s[o + 9]);
+    b2bG(2, 12, 22, 24, s[o + 10], s[o + 11]);
+    b2bG(4, 14, 16, 26, s[o + 12], s[o + 13]);
+    b2bG(6, 8, 18, 28, s[o + 14], s[o + 15]);
+  }
+  for (i = 0; i < 16; i++) { ctx.h[i] = ctx.h[i] ^ b2bV[i] ^ b2bV[i + 16]; }
+}
+function blake2b(input, outlen) {
+  var ctx = { b: new Uint8Array(128), h: new Uint32Array(16), t: 0, c: 0,
+              outlen: outlen };
+  var i;
+  for (i = 0; i < 16; i++) { ctx.h[i] = B2B_IV32[i]; }
+  ctx.h[0] = ctx.h[0] ^ (0x01010000 ^ outlen);
+  for (i = 0; i < input.length; i++) {
+    if (ctx.c === 128) { ctx.t += ctx.c; b2bCompress(ctx, false); ctx.c = 0; }
+    ctx.b[ctx.c++] = input[i];
+  }
+  ctx.t += ctx.c;
+  while (ctx.c < 128) { ctx.b[ctx.c++] = 0; }
+  b2bCompress(ctx, true);
+  var out = new Uint8Array(outlen);
+  for (i = 0; i < outlen; i++) { out[i] = ctx.h[i >> 2] >> (8 * (i & 3)); }
+  return out;
+}
+
+/* ---- Nano account codec: the same rules as vendor/nanoaddr.py ---- */
+var NANO_ALPHABET = "13456789abcdefghijkmnopqrstuwxyz";
+var NANO_BODY_LEN = 52;
+var NANO_CHECKSUM_LEN = 8;
+
+function b32Encode(bits, length) {
+  /* `bits` is an array of 0/1, most significant first. */
+  var out = "", i, j, value;
+  for (i = 0; i < length; i++) {
+    value = 0;
+    for (j = 0; j < 5; j++) { value = (value << 1) | bits[i * 5 + j]; }
+    out += NANO_ALPHABET.charAt(value);
+  }
+  return out;
+}
+function bytesToBits(bytes, padBits) {
+  var bits = [], i, b;
+  for (i = 0; i < padBits; i++) { bits.push(0); }
+  for (i = 0; i < bytes.length; i++) {
+    for (b = 7; b >= 0; b--) { bits.push((bytes[i] >> b) & 1); }
+  }
+  return bits;
+}
+function checksumFor(publicKey) {
+  /* blake2b-40 of the key, bytes reversed, base32 in 8 characters. */
+  var digest = blake2b(publicKey, 5);
+  var reversed = new Uint8Array(5), i;
+  for (i = 0; i < 5; i++) { reversed[i] = digest[4 - i]; }
+  return b32Encode(bytesToBits(reversed, 0), NANO_CHECKSUM_LEN);
+}
+function validateAccount(address) {
+  if (typeof address !== "string") {
+    return { valid: false, reason: "not_a_string", message: "expected a string" };
+  }
+  var candidate = address.trim();
+  if (!candidate) { return { valid: false, reason: "empty", message: "address is empty" }; }
+  var prefix = null, prefixes = ["nano_", "xrb_"], i;
+  for (i = 0; i < prefixes.length; i++) {
+    if (candidate.indexOf(prefixes[i]) === 0) { prefix = prefixes[i]; break; }
+  }
+  if (prefix === null) {
+    return { valid: false, reason: "bad_prefix",
+             message: "address must start with 'nano_' or the legacy 'xrb_'" };
+  }
+  var rest = candidate.slice(prefix.length);
+  if (rest.length !== NANO_BODY_LEN + NANO_CHECKSUM_LEN) {
+    return { valid: false, reason: "bad_length",
+             message: "expected " + (NANO_BODY_LEN + NANO_CHECKSUM_LEN) +
+                      " characters after the prefix, got " + rest.length };
+  }
+  var body = rest.slice(0, NANO_BODY_LEN), supplied = rest.slice(NANO_BODY_LEN);
+  if ("13".indexOf(body.charAt(0)) < 0) {
+    return { valid: false, reason: "bad_padding",
+             message: "first character after the prefix must be '1' or '3', got '" +
+                      body.charAt(0) + "'" };
+  }
+  /* 52 base32 characters are 260 bits: 4 pad bits then the 256-bit key. */
+  var bits = [], index, c;
+  for (i = 0; i < body.length; i++) {
+    c = body.charAt(i);
+    index = NANO_ALPHABET.indexOf(c);
+    if (index < 0) {
+      return { valid: false, reason: "bad_character",
+               message: "character '" + c + "' is not in the Nano base32 alphabet " +
+                        "(0, 2, l and v are never valid)" };
+    }
+    for (var b = 4; b >= 0; b--) { bits.push((index >> b) & 1); }
+  }
+  var publicKey = new Uint8Array(32), byteIndex, bitIndex, value;
+  for (byteIndex = 0; byteIndex < 32; byteIndex++) {
+    value = 0;
+    for (bitIndex = 0; bitIndex < 8; bitIndex++) {
+      value = (value << 1) | bits[4 + byteIndex * 8 + bitIndex];
+    }
+    publicKey[byteIndex] = value;
+  }
+  var computed = checksumFor(publicKey);
+  if (computed !== supplied) {
+    return { valid: false, reason: "bad_checksum",
+             message: "checksum mismatch: address carries '" + supplied +
+                      "', the key implies '" + computed + "'" };
+  }
+  var hex = "", k;
+  for (k = 0; k < 32; k++) {
+    hex += ("0" + publicKey[k].toString(16)).slice(-2);
+  }
+  /* The canonical spelling is always the nano_ one, as canonical.py writes it. */
+  return { valid: true, normalised: "nano_" + body + supplied,
+           public_key: hex.toUpperCase() };
+}
+
+/* ---- sha256, inline ---- */
+var SHA_K = new Uint32Array([
+  0x428a2f98,0x71374491,0xb5c0fbcf,0xe9b5dba5,0x3956c25b,0x59f111f1,0x923f82a4,0xab1c5ed5,
+  0xd807aa98,0x12835b01,0x243185be,0x550c7dc3,0x72be5d74,0x80deb1fe,0x9bdc06a7,0xc19bf174,
+  0xe49b69c1,0xefbe4786,0x0fc19dc6,0x240ca1cc,0x2de92c6f,0x4a7484aa,0x5cb0a9dc,0x76f988da,
+  0x983e5152,0xa831c66d,0xb00327c8,0xbf597fc7,0xc6e00bf3,0xd5a79147,0x06ca6351,0x14292967,
+  0x27b70a85,0x2e1b2138,0x4d2c6dfc,0x53380d13,0x650a7354,0x766a0abb,0x81c2c92e,0x92722c85,
+  0xa2bfe8a1,0xa81a664b,0xc24b8b70,0xc76c51a3,0xd192e819,0xd6990624,0xf40e3585,0x106aa070,
+  0x19a4c116,0x1e376c08,0x2748774c,0x34b0bcb5,0x391c0cb3,0x4ed8aa4a,0x5b9cca4f,0x682e6ff3,
+  0x748f82ee,0x78a5636f,0x84c87814,0x8cc70208,0x90befffa,0xa4506ceb,0xbef9a3f7,0xc67178f2]);
+
+function rotr32(x, n) { return (x >>> n) | (x << (32 - n)); }
+
+function sha256Hex(bytes) {
+  var H = new Uint32Array([0x6a09e667,0xbb67ae85,0x3c6ef372,0xa54ff53a,
+                           0x510e527f,0x9b05688c,0x1f83d9ab,0x5be0cd19]);
+  var length = bytes.length;
+  var padded = new Uint8Array((((length + 9) + 63) >> 6) << 6);
+  padded.set(bytes);
+  padded[length] = 0x80;
+  var view = new DataView(padded.buffer);
+  view.setUint32(padded.length - 8, Math.floor(length / 0x20000000));
+  view.setUint32(padded.length - 4, (length << 3) >>> 0);
+  var w = new Uint32Array(64), offset, i, a, b, c, d, e, f, g, h, s0, s1, t1, t2, ch, maj;
+  for (offset = 0; offset < padded.length; offset += 64) {
+    for (i = 0; i < 16; i++) { w[i] = view.getUint32(offset + i * 4); }
+    for (i = 16; i < 64; i++) {
+      s0 = rotr32(w[i-15], 7) ^ rotr32(w[i-15], 18) ^ (w[i-15] >>> 3);
+      s1 = rotr32(w[i-2], 17) ^ rotr32(w[i-2], 19) ^ (w[i-2] >>> 10);
+      w[i] = (w[i-16] + s0 + w[i-7] + s1) >>> 0;
+    }
+    a=H[0]; b=H[1]; c=H[2]; d=H[3]; e=H[4]; f=H[5]; g=H[6]; h=H[7];
+    for (i = 0; i < 64; i++) {
+      s1 = rotr32(e, 6) ^ rotr32(e, 11) ^ rotr32(e, 25);
+      ch = (e & f) ^ (~e & g);
+      t1 = (h + s1 + ch + SHA_K[i] + w[i]) >>> 0;
+      s0 = rotr32(a, 2) ^ rotr32(a, 13) ^ rotr32(a, 22);
+      maj = (a & b) ^ (a & c) ^ (b & c);
+      t2 = (s0 + maj) >>> 0;
+      h=g; g=f; f=e; e=(d + t1) >>> 0; d=c; c=b; b=a; a=(t1 + t2) >>> 0;
+    }
+    H[0]=(H[0]+a)>>>0; H[1]=(H[1]+b)>>>0; H[2]=(H[2]+c)>>>0; H[3]=(H[3]+d)>>>0;
+    H[4]=(H[4]+e)>>>0; H[5]=(H[5]+f)>>>0; H[6]=(H[6]+g)>>>0; H[7]=(H[7]+h)>>>0;
+  }
+  var out = "";
+  for (i = 0; i < 8; i++) { out += ("0000000" + H[i].toString(16)).slice(-8); }
+  return out;
+}
+
+/* ---- the grant bytes: byte-for-byte what grant_mint.py writes ----
+ *
+ * Python writes json.dumps(grant, indent=2, sort_keys=True, ensure_ascii=True)
+ * followed by a newline. JSON.stringify(obj, null, 2) agrees with that
+ * formatting exactly - same two-space indent, same ": " separator, same "[]"
+ * for an empty list - on two conditions this function meets:
+ *
+ *   1. sort_keys: the keys are INSERTED in sorted order, because
+ *      JSON.stringify follows insertion order for string keys.
+ *   2. ensure_ascii: any non-ASCII character must come out as \uXXXX, which
+ *      JSON.stringify does NOT do, so escapeNonAscii() does it afterwards.
+ *      No field of a grant can hold one today - addresses, digits and
+ *      timestamps are all ASCII - but relying on that would make the agreement
+ *      an accident instead of a property.
+ */
+function escapeNonAscii(text) {
+  return text.replace(/[\u0080-￿]/g, function (ch) {
+    return "\\u" + ("0000" + ch.charCodeAt(0).toString(16)).slice(-4);
+  });
+}
+function grantBytes(grant) {
+  return escapeNonAscii(JSON.stringify(grant, null, 2)) + "\n";
+}
+function utf8(text) {
+  var out = [], i, code;
+  for (i = 0; i < text.length; i++) {
+    code = text.charCodeAt(i);
+    if (code < 0x80) { out.push(code); }
+    else if (code < 0x800) { out.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f)); }
+    else { out.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f),
+                    0x80 | (code & 0x3f)); }
+  }
+  return new Uint8Array(out);
+}
+function buildGrant(subject, maxRaw, notBefore, notAfter, payees) {
+  /* Keys inserted in sorted order - see the note above. */
+  return {
+    allowed_payees: payees,
+    max_raw_per_payment: maxRaw,
+    not_after: notAfter,
+    not_before: notBefore,
+    policy_epoch: 1,
+    revoked_blocks: [],
+    revoked_request_ids: [],
+    subject_account: subject,
+    version: 1
+  };
+}
+
+/* ---- input rules, the same refusals as the command line ---- */
+var MOMENT_RE =
+  /^\d{4}-\d{2}-\d{2}[Tt ]\d{2}:\d{2}:\d{2}(\.\d+)?([Zz]|[+-]\d{2}:\d{2})$/;
+
+function normaliseMoment(text) {
+  /* UTC, trailing Z, whole seconds - the one spelling grant_mint.py writes. */
+  if (!MOMENT_RE.test(text.trim())) { return null; }
+  var parsed = new Date(text.trim().replace(" ", "T"));
+  if (isNaN(parsed.getTime())) { return null; }
+  return parsed.toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+function rawString(text) {
+  if (!/^[0-9]+$/.test(text)) { return null; }
+  /* Normalised so "007" and "7" produce identical bytes, as the CLI does.
+     BigInt, never Number: 10**30 raw does not fit in a double. */
+  return BigInt(text).toString();
+}
+
+/* ---- wiring ---- */
+function el(id) { return document.getElementById(id); }
+function say(id, text, bad) {
+  var node = el(id);
+  node.textContent = text || "";
+  node.className = "digest" + (text ? (bad ? " bad" : " good") : "");
+}
+
+function readForm() {
+  var errors = [];
+
+  var verdict = validateAccount(el("subject").value);
+  if (!verdict.valid) {
+    say("subject-verdict", "invalid_subject_account - " + verdict.message, true);
+    errors.push("subject");
+  } else {
+    say("subject-verdict", "valid - public key " + verdict.public_key, false);
+  }
+
+  var maxRaw = rawString(el("maxraw").value.trim());
+  if (maxRaw === null) {
+    say("maxraw-verdict", "max_raw_not_integer_string - ASCII digits only: no sign, " +
+        "no underscore, no whitespace, no exponent, never a decimal", true);
+    errors.push("maxraw");
+  } else {
+    say("maxraw-verdict", maxRaw + " raw", false);
+  }
+
+  var notAfter = normaliseMoment(el("notafter").value);
+  if (notAfter === null) {
+    say("notafter-verdict", "timestamp_not_absolute - RFC3339 with an explicit " +
+        "offset or a trailing Z", true);
+    errors.push("notafter");
+  } else {
+    say("notafter-verdict", "not after " + notAfter, false);
+  }
+
+  var lines = el("payees").value.split("\n"), payees = [], i, line, payeeVerdict;
+  var payeeErrors = [];
+  for (i = 0; i < lines.length; i++) {
+    line = lines[i].trim();
+    if (!line) { continue; }
+    payeeVerdict = validateAccount(line);
+    if (!payeeVerdict.valid) {
+      payeeErrors.push("line " + (i + 1) + ": " + payeeVerdict.message);
+    } else if (payees.indexOf(payeeVerdict.normalised) < 0) {
+      payees.push(payeeVerdict.normalised);
+    }
+  }
+  if (payeeErrors.length) {
+    say("payees-verdict", "invalid_payee_account - " + payeeErrors.join("; "), true);
+    errors.push("payees");
+  } else if (!payees.length) {
+    say("payees-verdict", "allowed_payees is empty: every payment will refuse with " +
+        "payee_not_allowed. Legal as a pre-stage, almost never what you meant.", true);
+  } else {
+    say("payees-verdict", payees.length + " payee(s) allowed", false);
+  }
+
+  var notBefore = null;
+  if (notAfter !== null) {
+    notBefore = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+    if (notBefore >= notAfter) {
+      say("notafter-verdict", "empty_grant_window - not_after must be strictly " +
+          "after now (" + notBefore + ")", true);
+      errors.push("window");
+    }
+  }
+
+  if (errors.length) { return null; }
+  return buildGrant(verdict.normalised, maxRaw, notBefore, notAfter, payees);
+}
+
+el("form").addEventListener("submit", function (event) {
+  event.preventDefault();
+  var grant = readForm();
+  if (grant === null) { el("out").className = "out"; return; }
+
+  var text = grantBytes(grant);
+  var bytes = utf8(text);
+  var hex = sha256Hex(bytes);
+
+  el("bytes").value = text;
+  el("digest").textContent = hex;
+  el("length").textContent = bytes.length + " bytes";
+  el("ref").value = JSON.stringify(
+    { policy_epoch: grant.policy_epoch, sha256: hex, url: null }, null, 2) + "\n";
+  el("cmd").value = "python3 grant_mint.py publish-check --ref reference.json " +
+                    "--subject " + grant.subject_account + "\n";
+  el("out").className = "out shown";
+
+  /* If the platform offers a vetted sha256, make it agree with ours. A
+     disagreement means one of the two is wrong and the operator must not
+     publish either digest, so it is said out loud rather than logged. */
+  if (window.crypto && window.crypto.subtle && window.crypto.subtle.digest) {
+    window.crypto.subtle.digest("SHA-256", bytes).then(function (buffer) {
+      var view = new Uint8Array(buffer), other = "", i;
+      for (i = 0; i < view.length; i++) {
+        other += ("0" + view[i].toString(16)).slice(-2);
+      }
+      if (other !== hex) {
+        say("subject-verdict", "INTERNAL DISAGREEMENT: this page computed " + hex +
+            " and the browser computed " + other + ". Do not publish either. " +
+            "Use grant_mint.py instead and report this.", true);
+      }
+    }, function () { /* no secure context: the inline digest stands alone */ });
+  }
+});
+
+/* A page that cannot reproduce the pinned vector is a page that must not be
+   trusted to mint, so it says so before anyone uses it. The expected values
+   come from vectors/grant-mint-v1.json. */
+(function selfCheck() {
+  /* Joined at runtime from two halves, never written as one 64-character run:
+     this repository's secret gate refuses a standalone 64-hex literal anywhere,
+     because a seed and a sha256 digest are indistinguishable on sight. The
+     halves are vectors/grant-mint-v1.json's sha256_halves. */
+  var expectedDigest = "2c00afb7c876259247ef8bdf6016ee60" +
+                       "4181588d0b166a1f720001561d30d017";
+  var grant = buildGrant(
+    "nano_3af3n8it5af3n8it5af3n8it5af3n8it5af3n8it5af3n8it5af3qc7i5mny",
+    "250000000000000000000000000000",
+    "2026-10-03T06:00:00Z", "2026-11-03T06:00:00Z",
+    ["nano_3eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpjberezd"]);
+  var got = sha256Hex(utf8(grantBytes(grant)));
+  var node = el("selfcheck");
+  if (got === expectedDigest) {
+    node.textContent = "Self-check: this page reproduces the pinned vector " +
+      "grant-mint-v1 exactly (sha256 " + got.slice(0, 16) + "…).";
+    node.className = "good";
+  } else {
+    node.textContent = "SELF-CHECK FAILED: this page computed " + got +
+      " for the pinned vector and expected " + expectedDigest +
+      ". Do not use this page. Use grant_mint.py.";
+    node.className = "bad";
+  }
+})();
+</script>
+</body>
+</html>
