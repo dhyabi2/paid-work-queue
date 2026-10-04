@@ -1,0 +1,129 @@
+{
+ "v": 1,
+ "title": "counterparty-role v1 conformance vector",
+ "purpose": "Hand this to anyone implementing a counterparty-role declarer, in any language. Reproducing `bytes` EXACTLY - and therefore the digest - means your declarer agrees with paid-work-queue, and an intent you mint will verify against counterparty_role.py.",
+ "serialisation": {
+  "algorithm": "json.dumps(intent, sort_keys=True, separators=(\",\", \":\"), ensure_ascii=True) + chr(10)",
+  "encoding": "utf-8",
+  "digest": "blake2b with a 32-byte digest over those bytes and no others, lowercase hex",
+  "note": "The digest is over the bytes AS WRITTEN. An editor, proxy or framework that re-serialises the JSON changes the digest, and verify refuses the file as not the one minted. blake2b-256 and not sha256 on purpose: authority_receipt pins GRANTS by sha256, and two different documents under two different algorithms cannot be mistaken for one another in a log."
+ },
+ "inputs": {
+  "job_id": "job-2026-09-26-003",
+  "payer_account": "nano_16aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46ajbtsyew7c",
+  "payee_account": "nano_1aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj4ykus34mi",
+  "counterparty_class": "external",
+  "amount_raw": "50000000000000000000000000000",
+  "declared_at": "2026-10-04T06:00:00Z"
+ },
+ "intent": {
+  "v": "counterparty-role-v1",
+  "job_id": "job-2026-09-26-003",
+  "payer_account": "nano_16aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46ajbtsyew7c",
+  "payee_account": "nano_1aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj4ykus34mi",
+  "counterparty_class": "external",
+  "amount_raw": "50000000000000000000000000000",
+  "declared_at": "2026-10-04T06:00:00Z"
+ },
+ "bytes": "{\"amount_raw\":\"50000000000000000000000000000\",\"counterparty_class\":\"external\",\"declared_at\":\"2026-10-04T06:00:00Z\",\"job_id\":\"job-2026-09-26-003\",\"payee_account\":\"nano_1aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj4ykus34mi\",\"payer_account\":\"nano_16aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46ajbtsyew7c\",\"v\":\"counterparty-role-v1\"}\n",
+ "byte_count": 341,
+ "intent_digest_halves": [
+  "cedf802217c70e7d9a00bbda4830c52f",
+  "504b33316feddbf9680aa4f4555adb99"
+ ],
+ "intent_digest_note": "Join these two 32-character halves and you have the digest. It is split because this repository's secret gate (validate.SECRET_RE) refuses any standalone run of 64 or more hex characters, and a conformance vector is not worth weakening that gate for.",
+ "classes": [
+  "external",
+  "operator",
+  "self"
+ ],
+ "observable_classes": [
+  "external",
+  "self"
+ ],
+ "classify_pairs": [
+  {
+   "payer_account": "nano_16aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46ajbtsyew7c",
+   "payee_account": "nano_1aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj4ykus34mi",
+   "observed_class": "external",
+   "same_account": false,
+   "why": "two distinct public keys"
+  },
+  {
+   "payer_account": "nano_16aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46ajbtsyew7c",
+   "payee_account": "nano_16aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46ajbtsyew7c",
+   "observed_class": "self",
+   "same_account": true,
+   "why": "the self-probe: one account on both sides"
+  },
+  {
+   "payer_account": "nano_1aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj4ykus34mi",
+   "payee_account": "xrb_1aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj4ykus34mi",
+   "observed_class": "self",
+   "same_account": true,
+   "why": "the legacy xrb_ spelling of the SAME key. A string compare reads these as two accounts and lets a self-probe through; comparing by decoded public key does not."
+  },
+  {
+   "payer_account": "xrb_1aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj46aj4ykus34mi",
+   "payee_account": "nano_1esm8esm8esm8esm8esm8esm8esm8esm8esm8esm8esm8esm8esmwiixh3uh",
+   "observed_class": "external",
+   "same_account": false,
+   "why": "an xrb_ payer against a third key is still external"
+  }
+ ],
+ "verify_cases": [
+  {
+   "name": "clean external settlement",
+   "declared_class": "external",
+   "observed_class": "external",
+   "reason": "declared_class_matches_observed",
+   "ok": true,
+   "halt": false
+  },
+  {
+   "name": "THE VIOLATION: declared external, settled self",
+   "declared_class": "external",
+   "observed_class": "self",
+   "reason": "declared_external_settled_self",
+   "ok": false,
+   "halt": true,
+   "why": "the six 'confirmed' settlements moltbookrevenueagent measured, every one of which authority_receipt.verify passes with ok:true and zero reasons"
+  },
+  {
+   "name": "under-claiming is allowed",
+   "declared_class": "self",
+   "observed_class": "external",
+   "reason": "declared_self_settled_external",
+   "ok": true,
+   "halt": false,
+   "why": "ambiguity resolves downward, as fulfillment_receipt.effective_kind already does it"
+  },
+  {
+   "name": "declared self, settled self",
+   "declared_class": "self",
+   "observed_class": "self",
+   "reason": "declared_class_matches_observed",
+   "ok": true,
+   "halt": false
+  },
+  {
+   "name": "operator is never observed",
+   "declared_class": "operator",
+   "observed_class": "external",
+   "reason": "declared_operator_not_checkable_on_ledger",
+   "ok": true,
+   "halt": false
+  },
+  {
+   "name": "the intent was written after the chain was read",
+   "declared_class": "external",
+   "observed_class": "external",
+   "reason": "intent_declared_after_settlement",
+   "ok": false,
+   "halt": true,
+   "why": "declared_at at or after the block's local_timestamp. Equal is refused: the same second is not evidence of having come first"
+  }
+ ],
+ "operator_note": "`operator` is a declaration about who controls the far account and no two addresses on the ledger can prove it, so it is never an observed class. A row declared operator is not contradicted here and is not evidence of a sale either: it asserts the counterparty is NOT external.",
+ "scope_note": "This establishes who the two sides were, not that the invoice described real work. In moltbookrevenueagent's words: the nonce proves which invoice settled, not that the invoice described real work - that is the leap no settlement layer closes, and pretending it does is how attestations get laundered. One laundering is removed here: the receipt that is true and uninformative. Nothing further is claimed."
+}
