@@ -151,6 +151,17 @@ FULFILLMENT_KEYS = frozenset({
     "evidence_grade", "committed_at",
 })
 
+# The ONE key a fulfillment receipt may carry that `FULFILLMENT_KEYS` does not
+# require. `divergence_notes` is written by `divergence_note.attach` and says
+# where this record and another record disagree. It is optional and additive: a
+# receipt without it verifies exactly as it did before this key existed, every
+# other unknown key is still refused, and NOTHING here reads it - the evidence
+# grade is computed from the attestations alone, so a divergence note adds to
+# the record and can never move the verdict. Its contents are checked only for
+# being notes at all; `divergence_note.verify` is the full gate, and importing
+# it here would be a cycle (it imports this module to validate the receipt).
+OPTIONAL_FULFILLMENT_KEYS = frozenset({"divergence_notes"})
+
 ATTESTOR_KINDS = ("third_party", "payer", "payee", "unknown")
 VERDICTS = ("accepted", "rejected", "partial")
 GRADES = ("independently_attested", "counterparty_attested", "self_attested",
@@ -278,12 +289,17 @@ def _exact_int(value):
     return value if isinstance(value, int) and not isinstance(value, bool) else None
 
 
-def _shape(document, keys, code, label):
-    """`document` as a dict holding exactly `keys`, or a Refusal naming the gap."""
+def _shape(document, keys, code, label, optional=frozenset()):
+    """`document` as a dict holding exactly `keys`, or a Refusal naming the gap.
+
+    `optional` names keys that MAY be present and are never required. It
+    defaults to none, so the delivery and attestation shapes are unchanged and
+    an unexpected key there is still refused.
+    """
     if not isinstance(document, dict):
         raise Refusal(code, "%s must be a JSON object" % label)
     missing = sorted(keys - set(document))
-    extra = sorted(set(document) - keys)
+    extra = sorted(set(document) - keys - optional)
     if missing or extra:
         raise Refusal(code, "%s: missing %s, unexpected %s" % (label, missing, extra))
     if _exact_int(document.get("version")) != VERSION:
@@ -367,7 +383,7 @@ def _checked_attestation(document, index):
 def _checked_fulfillment(document):
     """A fulfillment receipt, fully validated. The `verify` entry gate."""
     doc = _shape(document, FULFILLMENT_KEYS, "bad_fulfillment_shape",
-                 "the fulfillment receipt")
+                 "the fulfillment receipt", optional=OPTIONAL_FULFILLMENT_KEYS)
     _text(doc["request_id"], "request_id", "bad_fulfillment_shape")
     _hex64(doc["request_digest"], "request_digest")
     _hex64(doc["delivery_digest"], "delivery_digest")
@@ -388,7 +404,33 @@ def _checked_fulfillment(document):
                       "independent_attestor_count must be a non-negative integer")
     for index, attestation in enumerate(doc["attestations"]):
         _checked_attestation(attestation, index)
+    _checked_divergence_notes(doc)
     return doc
+
+
+def _checked_divergence_notes(document):
+    """`divergence_notes`, when present, is a list of divergence notes.
+
+    A structural check and deliberately not the full one: `divergence_note` is
+    the tool that owns these documents and it validates a note against its own
+    seven reason codes. This module only refuses a `divergence_notes` that is
+    not a list of notes, so that a receipt carrying junk under that key is
+    refused at the gate rather than verified around.
+    """
+    if "divergence_notes" not in document:
+        return document
+    notes = document["divergence_notes"]
+    if not isinstance(notes, list):
+        raise Refusal("bad_fulfillment_shape", "divergence_notes must be a list")
+    for index, note in enumerate(notes):
+        where = "divergence_notes[%d]" % index
+        if not isinstance(note, dict):
+            raise Refusal("bad_fulfillment_shape", "%s must be a JSON object" % where)
+        if note.get("v") != "divergence-note-v1":
+            raise Refusal("bad_fulfillment_shape",
+                          "%s: v must be the string divergence-note-v1" % where)
+        _hex64(note.get("note_digest"), "%s.note_digest" % where)
+    return document
 
 
 # --------------------------------------------------------------------------
