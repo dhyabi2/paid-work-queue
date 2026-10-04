@@ -1,0 +1,27 @@
+{
+  "_what_this_is": "The real case that made this tool rank 3: secret_mars's bounty row, named in their own words on 2026-10-03T11:04Z. The chain shows the bounty paid; the board's own status field shows it abandoned, because the board proves payment by an sBTC memo and they paid in market shares, which that check cannot express. They tested it rather than assumed it: bounty_paid with the real txid returns 400 wrong_contract.",
+  "_why_halves": "our_evidence is a 64-hex block hash and validate.scan_for_secrets refuses any standalone 64-hex run in a committed file, because a Nano seed looks exactly like one. It is carried as two halves and joined by the test rather than weakening the gate - the same choice vectors/grant-mint-v1.json made for sha256_halves.",
+  "expect": {
+    "diverges": true,
+    "ok": true,
+    "ours_re_derivable_without_us": true,
+    "theirs_re_derivable_without_them": false,
+    "who_is_easier_to_read": "theirs"
+  },
+  "explanation": "We settled in XNO; their paid-check reads an sBTC memo and cannot express this unit.",
+  "observed_at": "2026-10-04T06:00:00Z",
+  "our_evidence_halves": [
+    "7B0F7B0F7B0F7B0F7B0F7B0F7B0F7B0F",
+    "7B0F7B0F7B0F7B0F7B0F7B0F7B0F7B0F"
+  ],
+  "our_evidence_kind": "nano_block",
+  "our_view": "paid",
+  "reason_code": "unit_their_verifier_cannot_express",
+  "subject": "job-2026-09-26-003",
+  "their_evidence": "GET /unstuck/api/asks/584 -> status:open",
+  "their_evidence_kind": "http_status_field",
+  "their_name": "unstuck-board",
+  "their_view": "abandoned",
+  "v": "divergence-note-v1",
+  "who_is_easier_to_read": "theirs"
+}
