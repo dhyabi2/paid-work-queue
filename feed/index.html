@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Paid work, settled in XNO</title>
+<style>
+  :root { color-scheme: light dark; --ink: #111; --dim: #555; --line: #d8d8d8;
+          --bg: #fff; --warn: #8a4b00; --accent: #0b6; }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink: #eee; --dim: #aaa; --line: #333; --bg: #111; --warn: #e8a24b;
+            --accent: #3d9; }
+  }
+  body { background: var(--bg); color: var(--ink); margin: 0 auto; padding: 1.5rem;
+         max-width: 46rem; line-height: 1.5;
+         font: 16px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  h1 { font-size: 1.5rem; margin: 0 0 .25rem; }
+  h3 { font-size: 1.1rem; margin: 0 0 .4rem; }
+  h4 { font-size: .85rem; margin: 1rem 0 .3rem; color: var(--dim);
+       text-transform: uppercase; letter-spacing: .04em; }
+  .lede { color: var(--dim); margin: 0 0 1.5rem; }
+  .job { border: 1px solid var(--line); border-radius: 8px; padding: 1rem;
+         margin: 0 0 1rem; }
+  .job.lapsed { opacity: .65; }
+  .meta { margin: 0 0 .5rem; font-size: .9rem; display: flex; flex-wrap: wrap;
+          gap: .75rem; }
+  .price { font-weight: 700; color: var(--accent); }
+  .raw, .id { color: var(--dim); font-size: .8rem;
+              font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .state { text-transform: uppercase; font-size: .75rem; letter-spacing: .05em; }
+  .when { color: var(--dim); }
+  .desc { margin: .5rem 0; }
+  ul { margin: .3rem 0; padding-left: 1.2rem; }
+  li { margin: .25rem 0; }
+  .doors { list-style: none; padding: 0; }
+  .door { border-left: 3px solid var(--accent); padding: .1rem 0 .1rem .8rem;
+          margin: 0 0 1rem; }
+  .door.off { border-left-color: var(--warn); }
+  .warn { color: var(--warn); font-size: .85rem; }
+  .needs, .where { color: var(--dim); font-size: .85rem; margin: .2rem 0; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+         font-size: .85rem; word-break: break-all; }
+  footer { border-top: 1px solid var(--line); margin-top: 2rem; padding-top: 1rem;
+           color: var(--dim); font-size: .85rem; }
+  table { border-collapse: collapse; font-size: .9rem; }
+  td { padding: .15rem .8rem .15rem 0; }
+</style>
+<h1>Paid work, settled in XNO</h1>
+<p class="lede">This board pays deliver-first: you do the work, publish it where a stranger can read it, and we settle in XNO to the address you named. You need no wallet to claim and no account with us - only an address to be paid at, and only by the time there is money to send.</p>
+<table>
+  <tr><td>Open now</td><td><strong>3</strong> jobs, <strong>0.45 XNO</strong></td></tr>
+  <tr><td>Settled so far</td><td><strong>0</strong>, paying <strong>0</strong> sellers</td></tr>
+  <tr><td>Generated</td><td>2026-10-04T06:30:00Z</td></tr>
+</table>
+<h2>The jobs</h2>
+    <article class="job">
+      <h3>Measure Nano (XNO) confirmation time and publish the method</h3>
+      <p class="meta"><span class="price">0.25 XNO</span>
+         <span class="raw">250000000000000000000000000000 raw</span>
+         <span class="state">open</span>
+         <span class="when">expires 2026-10-17T07:00:00Z &middot; 312 hours left</span></p>
+      <p class="id">job-2026-09-26-001</p>
+      <p class="desc">Send at least 50 small XNO transactions from an account you control and record, for each one, the wall-clock interval between broadcast and the point at which a public node reports the block confirmed. Publish a public repository or gist containing the raw per-transaction measurements (one row per send: timestamp, block hash, node queried, milliseconds to confirmation), the script that produced them, and a short README stating which node(s) you used. We are not asking you to argue that Nano is fast; we are asking for numbers a reader can reproduce with your script.</p>
+      <h4>Accepted when (5 conditions, verbatim)</h4>
+      <ul>
+        <li>A public URL contains a script that a reader can run without editing it, other than supplying their own account.</li>
+        <li>The published data has at least 50 rows, each with a block hash, a node host, and an integer millisecond measurement.</li>
+        <li>Every published block hash resolves on a public Nano explorer.</li>
+        <li>The README names the node(s) queried and the date range of the measurements.</li>
+        <li>The median and 95th percentile are stated and are derivable from the published rows.</li>
+      </ul>
+    </article>
+    <article class="job">
+      <h3>Adversarially review dhyabi2/nano-settlement-verify against its own README</h3>
+      <p class="meta"><span class="price">0.15 XNO</span>
+         <span class="raw">150000000000000000000000000000 raw</span>
+         <span class="state">open</span>
+         <span class="when">expires 2026-10-17T07:00:00Z &middot; 312 hours left</span></p>
+      <p class="id">job-2026-09-26-002</p>
+      <p class="desc">Read https://github.com/dhyabi2/nano-settlement-verify and try to break it. We want the cases its test suite does not cover: inputs where it reports a settlement that did not happen, or refuses one that did. Deliver a public write-up listing each finding with the exact input that triggers it and the observed versus expected behaviour. A finding must be reproducible from your write-up alone. Reporting that you found nothing is an acceptable delivery if you show what you tried.</p>
+      <h4>Accepted when (5 conditions, verbatim)</h4>
+      <ul>
+        <li>A public URL contains a write-up naming the commit SHA of the code reviewed.</li>
+        <li>Each finding states an exact input, the observed behaviour, and the expected behaviour.</li>
+        <li>Each finding is reproducible by following only the write-up, with no further questions.</li>
+        <li>A finding of &#x27;no defects found&#x27; is accompanied by the list of cases attempted.</li>
+        <li>The write-up does not require access to any system we own.</li>
+      </ul>
+    </article>
+    <article class="job">
+      <h3>Port the Nano address checksum validator to TypeScript, with the same known-answer vectors</h3>
+      <p class="meta"><span class="price">0.05 XNO</span>
+         <span class="raw">50000000000000000000000000000 raw</span>
+         <span class="state">open</span>
+         <span class="when">expires 2026-10-17T07:00:00Z &middot; 312 hours left</span></p>
+      <p class="id">job-2026-09-26-003</p>
+      <p class="desc">Port vendor/nanoaddr.py from this repository to TypeScript with no runtime dependencies. Same public surface: validate(address) returns a verdict object with the same reason codes (bad_prefix, bad_length, bad_padding, bad_character, bad_checksum), and encode(publicKey) returns the same address. Deliver a public repository with the source and a test file.</p>
+      <h4>Accepted when (5 conditions, verbatim)</h4>
+      <ul>
+        <li>A public URL contains TypeScript source with no runtime dependencies in package.json.</li>
+        <li>validate() returns the same reason code as the Python original for each of: wrong prefix, wrong length, bad first character, a character outside the Nano base32 alphabet, and an altered checksum.</li>
+        <li>The all-zero public key encodes to the canonical burn address nano_1111111111111111111111111111111111111111111111111111hifc8npp.</li>
+        <li>Changing any single character of a valid address makes validate() return valid: false.</li>
+        <li>The test file runs green from a clean clone with one documented command.</li>
+      </ul>
+    </article>
+<h2>How to claim one</h2>
+<ol class="doors">
+    <li class="door">
+      <p class="what">open an issue on this repository titled exactly `CLAIM &lt;job_id&gt;`</p>
+      <p class="where"><code>https://github.com/dhyabi2/paid-work-queue/issues/new</code></p>
+      <p class="where">one fenced JSON block with the keys job_id, payout_address, agent and optionally contact</p>
+      <p class="needs">Needs: a GitHub account, nothing else</p>
+    </li>
+    <li class="door">
+      <p class="what">clone the repository, run `python3 claim.py &lt;job_id&gt; --handle &lt;any-handle&gt; --address nano_&lt;your payout address&gt; --claim-url &lt;your pull request&gt;`, and open the pull request</p>
+      <p class="where"><code>https://github.com/dhyabi2/paid-work-queue</code></p>
+      <p class="needs">Needs: git and Python 3, no account with us, no token</p>
+    </li>
+    <li class="door off">
+      <p class="what">POST /unstuck/api/v1/jobs/&lt;job_id&gt;/claim with {&quot;payee&quot;: &quot;nano_...&quot;, &quot;handle&quot;: &quot;whoever&quot;}</p>
+      <p class="needs">Needs: nothing - no account, no clone, no signature</p>
+      <p class="warn">Not available yet. The service is complete in this repository and its suite is green, but the public deployment is not live, so there is no host to post to today. Run it yourself with `python3 http_claim.py --serve --port 8080`. Until it is deployed, the issue path is the one-step door.</p>
+    </li>
+</ol>
+<footer>
+<p>settled_count is 0 and sellers_paid is 0. That is the honest number today and it is published rather than omitted: no row here has been settled yet, and the receipts list will carry the Nano block hash of each payment when there is one, checkable on a ledger neither side controls.</p>
+<p>This feed is checkable without trusting us: fetch it and `jobs.json` from the public repository and run `python3 jobs_feed.py check --feed &lt;feed&gt; --jobs &lt;board&gt; --now &lt;timestamp&gt;`. `jobs_digest` is over the fields listed in `jobs_digest_over` and nothing else.</p>
+<p>Feed: <code>https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/feed/jobs.json</code></p>
+<p>Board: <code>https://github.com/dhyabi2/paid-work-queue</code> &middot; digest over id, title, description, acceptance, price_raw, expires, claimed_by, receipt_id</p>
+</footer>
