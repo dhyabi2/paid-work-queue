@@ -76,6 +76,23 @@ def block(**overrides):
     return document
 
 
+def node_block(**overrides):
+    """The same block as a node answers it: the destination under `contents`.
+
+    `block_info` with `json_block=true` returns the signed block nested, so
+    `link_as_account` is not a top-level field of a real answer. Everything
+    else - `amount`, `confirmed`, `subtype`, `local_timestamp` - stays where
+    the node puts it, at the top level.
+    """
+    document = block(**overrides)
+    destination = document.pop("link_as_account", None)
+    document["contents"] = {
+        "type": "state", "account": document["block_account"],
+        "link_as_account": destination,
+    }
+    return document
+
+
 class TheTuple(unittest.TestCase):
 
     # -- 1 ------------------------------------------------------------------
@@ -274,6 +291,26 @@ class TheDestination(unittest.TestCase):
         for bad in (None, "", 7, "nano_not_an_address"):
             self.assertIn("pay_to_mismatch",
                           verify(req(), block(link_as_account=bad), NOW)["reasons"])
+
+    # -- 12c ----------------------------------------------------------------
+    def test_12c_the_destination_is_read_where_the_node_puts_it(self):
+        """A node's own `block_info` answer nests `link_as_account`.
+
+        `json_block=true` returns the signed block under `contents`, which is
+        where `settle.py`, `authority_receipt.py` and `counterparty_role.py`
+        all read the destination from, and which is the field the README tells
+        an agent to read (`contents.link_as_account`). Reading only the top
+        level refuses a payment that arrived in full, at the right address, for
+        the right amount - the one refusal this file must never issue.
+        """
+        verdict = verify(req(), node_block(), NOW)
+        self.assertTrue(verdict["ok"], verdict["reasons"])
+        self.assertEqual(verdict["reasons"], [])
+        self.assertEqual(verdict["observed"]["link_as_account"], PAYEE)
+
+    def test_12d_a_nested_stranger_is_still_refused(self):
+        verdict = verify(req(), node_block(link_as_account=STRANGER), NOW)
+        self.assertEqual(verdict["reasons"], ["pay_to_mismatch"])
 
 
 class TheBlock(unittest.TestCase):
