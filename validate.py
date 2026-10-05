@@ -35,6 +35,7 @@ import nanoaddr  # noqa: E402
 from canonical import account_key, raw_amount, same_amount  # noqa: E402
 from money import raw_to_xno, xno_to_raw  # noqa: E402
 from usdc_shape import MIN_SETTLEABLE_RAW  # noqa: E402
+import external_edge_count  # noqa: E402
 
 JOB_STATES = ("open", "claimed", "delivered", "settled", "expired", "cancelled")
 CLAIMED_STATES = ("claimed", "delivered", "settled")
@@ -512,12 +513,35 @@ def receipts_at_ref(ref, root, path="receipts.json"):
 # 6. stats.json
 # --------------------------------------------------------------------------
 
-def compute_stats(jobs_document, receipts_document):
+OPERATOR_ACCOUNTS_FILE = "operator_accounts.json"
+
+
+def read_operator_accounts(root):
+    """Every account this operator declares it controls, or an empty list.
+
+    Declared in a file and never discovered from the data: an undeclared
+    operator set is how a self-referential book publishes every row as outside
+    demand (`external_edge_count.py`). An absent or unreadable file reads as
+    "nothing declared", which makes the demand numbers publish as null with a
+    reason rather than as a count - it never makes them read as strangers.
+    """
+    path = os.path.join(root, OPERATOR_ACCOUNTS_FILE)
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            document = json.load(handle)
+    except (OSError, ValueError):
+        return []
+    listed = document.get("operator_accounts") if isinstance(document, dict) else document
+    return [value for value in listed if isinstance(value, str)] \
+        if isinstance(listed, list) else []
+
+
+def compute_stats(jobs_document, receipts_document, operator_accounts=()):
     jobs = [j for j in jobs_document.get("jobs", []) if isinstance(j, dict)]
     receipts = [r for r in receipts_document.get("receipts", []) if isinstance(r, dict)]
     total_raw = sum(int(r["amount_raw"]) for r in receipts)
     settled_at = sorted(r["settled_at"] for r in receipts)
-    return {
+    stats = {
         "jobs_open": sum(1 for j in jobs if j.get("state") == "open"),
         "jobs_settled": sum(1 for j in jobs if j.get("state") == "settled"),
         # By account, not by spelling: a receipt written before settle.py
@@ -529,6 +553,13 @@ def compute_stats(jobs_document, receipts_document):
         "first_settlement": settled_at[0] if settled_at else None,
         "last_settlement": settled_at[-1] if settled_at else None,
     }
+    # Beside jobs_settled and sellers_paid, never instead of them. A settlement
+    # count is the number a book inflates by accident, because it counts every
+    # row the operator could have written; the number an underwriter can mark
+    # is the count of distinct strangers who paid. Both are published, and
+    # `demand_signal` names which is which.
+    stats.update(external_edge_count.demand_fields(receipts, operator_accounts))
+    return stats
 
 
 # --------------------------------------------------------------------------
@@ -578,7 +609,8 @@ def run(root, base_ref=None, write_stats=True, out=sys.stdout):
         print("\n%d failure(s). Nothing was merged." % len(errors), file=out)
         return 1
 
-    stats = compute_stats(jobs_document, receipts_document)
+    stats = compute_stats(jobs_document, receipts_document,
+                          read_operator_accounts(root))
     if write_stats:
         with open(os.path.join(root, "stats.json"), "w", encoding="utf-8") as handle:
             json.dump(stats, handle, indent=2, sort_keys=True)

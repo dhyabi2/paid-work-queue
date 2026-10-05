@@ -1,0 +1,134 @@
+{
+  "_demand_field": "distinct_external_counterparties",
+  "_not_the_demand_field": "settlement_count",
+  "_what": "Frozen outputs. A build that changes one of these numbers has changed what the demand signal means, which is a decision and not a refactor.",
+  "attest_falls_short": {
+    "failed": [
+      {
+        "observed": 1,
+        "required": 3,
+        "rule": "min_distinct_external_counterparties"
+      },
+      {
+        "observed": 1.0,
+        "required": 0.5,
+        "rule": "max_largest_counterparty_share"
+      }
+    ],
+    "meets_requirement": false,
+    "note": "meets_requirement says the book carries N distinct strangers. It does not say the work they paid for was real; that leap is not closed here.",
+    "observed": {
+      "distinct_external_counterparties": 1,
+      "external_edges": 16,
+      "largest_counterparty_share": 1.0,
+      "re_derivable_from_chain_alone": 16
+    },
+    "required": {
+      "max_largest_counterparty_share": 0.5,
+      "min_distinct_external_counterparties": 3,
+      "require_chain_rederivable": true
+    },
+    "version": 1
+  },
+  "honest_zero": {
+    "demand_signal": {
+      "field": "distinct_external_counterparties",
+      "not": "settlement_count",
+      "value": 0,
+      "why": "a settlement count includes rows the operator can author; a distinct external counterparty is an address the operator does not control that paid a published price without being asked"
+    },
+    "distinct_external_counterparties": 0,
+    "external_edges": 0,
+    "largest_counterparty_share": 0.0,
+    "notes": [
+      "moltbookrevenueagent, whose metric this is: the nonce proves which invoice settled, not that the invoice described real work - that is the leap no settlement layer closes, and pretending it does is how attestations get laundered. Nothing here claims the work was real, establishes payer identity or scores delivery.",
+      "external_edges counts only rows where NEITHER side is a declared operator account AND the payer is not the payee. The operator set is declared, never discovered: with none declared this tool refuses rather than reading every self-dealing row as a stranger.",
+      "operator_authorable is settlement_count minus the external edges that carry a confirmed 64-character block hash. It is published beside the demand number on purpose: omitting it is how 16-of-328 becomes '328 settlements'.",
+      "largest_counterparty_share is the biggest single counterparty's share of the external edges. A book where one address is all of 'demand' is reported as such rather than as a count.",
+      "A period is half-open, from <= timestamp < to, so two adjacent windows can never count one settlement twice."
+    ],
+    "operator_accounts_declared": 3,
+    "operator_authorable": 0,
+    "operator_edges": 0,
+    "period": null,
+    "re_derivable_from_chain_alone": 0,
+    "reasons": [
+      "no_settlements_yet"
+    ],
+    "self_edges": 0,
+    "settlement_count": 0,
+    "settlements_considered": 0,
+    "top_counterparty_concentration": {
+      "top_1": 0.0,
+      "top_3": 0.0
+    },
+    "undeclared_edges": 0,
+    "version": 1
+  },
+  "moltbookrevenueagent_328": {
+    "demand_signal": {
+      "field": "distinct_external_counterparties",
+      "not": "settlement_count",
+      "value": 11,
+      "why": "a settlement count includes rows the operator can author; a distinct external counterparty is an address the operator does not control that paid a published price without being asked"
+    },
+    "distinct_external_counterparties": 11,
+    "external_edges": 16,
+    "largest_counterparty_share": 0.25,
+    "notes": [
+      "moltbookrevenueagent, whose metric this is: the nonce proves which invoice settled, not that the invoice described real work - that is the leap no settlement layer closes, and pretending it does is how attestations get laundered. Nothing here claims the work was real, establishes payer identity or scores delivery.",
+      "external_edges counts only rows where NEITHER side is a declared operator account AND the payer is not the payee. The operator set is declared, never discovered: with none declared this tool refuses rather than reading every self-dealing row as a stranger.",
+      "operator_authorable is settlement_count minus the external edges that carry a confirmed 64-character block hash. It is published beside the demand number on purpose: omitting it is how 16-of-328 becomes '328 settlements'.",
+      "largest_counterparty_share is the biggest single counterparty's share of the external edges. A book where one address is all of 'demand' is reported as such rather than as a count.",
+      "A period is half-open, from <= timestamp < to, so two adjacent windows can never count one settlement twice."
+    ],
+    "operator_accounts_declared": 3,
+    "operator_authorable": 312,
+    "operator_edges": 72,
+    "period": null,
+    "re_derivable_from_chain_alone": 16,
+    "reasons": [],
+    "self_edges": 240,
+    "settlement_count": 328,
+    "settlements_considered": 328,
+    "top_counterparty_concentration": {
+      "top_1": 0.25,
+      "top_3": 0.5
+    },
+    "undeclared_edges": 0,
+    "version": 1
+  },
+  "one_stranger_16_edges": {
+    "demand_signal": {
+      "field": "distinct_external_counterparties",
+      "not": "settlement_count",
+      "value": 1,
+      "why": "a settlement count includes rows the operator can author; a distinct external counterparty is an address the operator does not control that paid a published price without being asked"
+    },
+    "distinct_external_counterparties": 1,
+    "external_edges": 16,
+    "largest_counterparty_share": 1.0,
+    "notes": [
+      "moltbookrevenueagent, whose metric this is: the nonce proves which invoice settled, not that the invoice described real work - that is the leap no settlement layer closes, and pretending it does is how attestations get laundered. Nothing here claims the work was real, establishes payer identity or scores delivery.",
+      "external_edges counts only rows where NEITHER side is a declared operator account AND the payer is not the payee. The operator set is declared, never discovered: with none declared this tool refuses rather than reading every self-dealing row as a stranger.",
+      "operator_authorable is settlement_count minus the external edges that carry a confirmed 64-character block hash. It is published beside the demand number on purpose: omitting it is how 16-of-328 becomes '328 settlements'.",
+      "largest_counterparty_share is the biggest single counterparty's share of the external edges. A book where one address is all of 'demand' is reported as such rather than as a count.",
+      "A period is half-open, from <= timestamp < to, so two adjacent windows can never count one settlement twice."
+    ],
+    "operator_accounts_declared": 3,
+    "operator_authorable": 0,
+    "operator_edges": 0,
+    "period": null,
+    "re_derivable_from_chain_alone": 16,
+    "reasons": [],
+    "self_edges": 0,
+    "settlement_count": 16,
+    "settlements_considered": 16,
+    "top_counterparty_concentration": {
+      "top_1": 1.0,
+      "top_3": 1.0
+    },
+    "undeclared_edges": 0,
+    "version": 1
+  }
+}

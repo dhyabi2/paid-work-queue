@@ -63,6 +63,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "vendor"))
 
 import canonical  # noqa: E402
+import external_edge_count  # noqa: E402
 import money  # noqa: E402
 import validate  # noqa: E402
 
@@ -330,6 +331,27 @@ def read_receipts(document):
     return rows, len(payees)
 
 
+OPERATOR_ACCOUNTS_FILE = "operator_accounts.json"
+
+
+def read_operator_accounts(path=None):
+    """Every account the operator declares it controls, or an empty list.
+
+    Declared in a file and never inferred from the receipts. Absent reads as
+    "nothing declared", which publishes the demand numbers as null with a
+    reason beside them - it never publishes our own transfers as strangers.
+    """
+    full = path or os.path.join(HERE, OPERATOR_ACCOUNTS_FILE)
+    try:
+        with open(full, "r", encoding="utf-8") as handle:
+            document = json.load(handle)
+    except (OSError, ValueError):
+        return []
+    listed = document.get("operator_accounts") if isinstance(document, dict) else document
+    return [value for value in listed if isinstance(value, str)] \
+        if isinstance(listed, list) else []
+
+
 # --------------------------------------------------------------------------
 # build
 # --------------------------------------------------------------------------
@@ -340,7 +362,8 @@ def hours_left(expires, now):
     return seconds // SECONDS_PER_HOUR
 
 
-def build(jobs, receipts, payees_paid, now, buyer_account=None):
+def build(jobs, receipts, payees_paid, now, buyer_account=None,
+          operator_accounts=()):
     """The feed document. `now` is an aware datetime; nothing asks the clock."""
     published = []
     open_raw = 0
@@ -402,6 +425,12 @@ def build(jobs, receipts, payees_paid, now, buyer_account=None):
         "repository": REPO_URL,
         "notes": [DELIVER_FIRST_NOTE, CHECK_NOTE, SETTLED_NOTE],
     }
+    # Beside settled_count, never instead of it. settled_count is the number a
+    # book inflates by accident; distinct_external_counterparties is the one an
+    # underwriter can mark, and operator_authorable is how many rows we could
+    # have written ourselves. Publishing the three together is the honest form
+    # of moltbookrevenueagent's 16-of-328.
+    feed.update(external_edge_count.demand_fields(receipts, operator_accounts))
     if buyer_account is None:
         # Not invented. No account in this repository is established as the
         # buyer's, and a feed that printed a guess would be making up the one
@@ -545,7 +574,7 @@ def render_html(feed):
 # check
 # --------------------------------------------------------------------------
 
-def check(feed, jobs, receipts, payees_paid, now):
+def check(feed, jobs, receipts, payees_paid, now, operator_accounts=()):
     """Whether the published feed still agrees with the board.
 
     Two failures, told apart on purpose. `feed_digest_mismatch` means the BOARD
@@ -581,14 +610,20 @@ def check(feed, jobs, receipts, payees_paid, now):
 
     # Time-derived fields, re-derived at `now` rather than trusted.
     expected, _ = build(jobs, receipts, payees_paid, now,
-                        buyer_account=feed.get("buyer_account"))
+                        buyer_account=feed.get("buyer_account"),
+                        operator_accounts=operator_accounts)
     for job in expected["jobs"]:
         shown = published.get(job["id"])
         if shown is not None and shown.get("state") != job["state"]:
             stale.append("%s: state is %r in the feed and %r at this time"
                          % (job["id"], shown.get("state"), job["state"]))
     for field in ("open_count", "open_total_raw", "open_total_xno",
-                  "settled_count", "sellers_paid"):
+                  "settled_count", "sellers_paid",
+                  # A stale demand number is the one a reader would mark, so it
+                  # is re-derived here rather than trusted like any other.
+                  "settlement_count", "external_edges",
+                  "distinct_external_counterparties", "operator_authorable",
+                  "largest_counterparty_share", "demand_signal"):
         if feed.get(field) != expected[field]:
             stale.append("%s: %r in the feed, %r now"
                          % (field, feed.get(field), expected[field]))
@@ -786,6 +821,10 @@ def build_parser():
     gen.add_argument("--jobs", default=None, help="the board; jobs.json by default")
     gen.add_argument("--receipts", default=None,
                      help="the receipts; receipts.json by default")
+    gen.add_argument("--operator-accounts", default=None,
+                     help="path to operator_accounts.json, the declared set the "
+                          "demand numbers are computed against; absent means "
+                          "none declared, which publishes them as null")
     gen.add_argument("--buyer-account", default=None,
                      help="the account the board pays from, if you want it stated; "
                           "omitted means the feed says it was not declared rather "
@@ -797,6 +836,8 @@ def build_parser():
     cmp_.add_argument("--receipts", default=None)
     cmp_.add_argument("--now", default=None,
                       help="RFC3339 UTC, required: this tool holds no clock")
+    cmp_.add_argument("--operator-accounts", default=None,
+                      help="path to operator_accounts.json, as for build")
     return parser
 
 
@@ -838,9 +879,12 @@ def main(argv=None):
         receipts, payees = read_receipts(
             load_json(receipts_path, "jobs_file_unreadable", "--receipts"))
 
+        operators = read_operator_accounts(args.operator_accounts)
+
         if args.command == "build":
             feed, soon = build(jobs, receipts, payees, now,
-                               buyer_account=args.buyer_account)
+                               buyer_account=args.buyer_account,
+                               operator_accounts=operators)
             payload = serialise(feed)
             page = render_html(feed)
             out = args.out
@@ -866,7 +910,7 @@ def main(argv=None):
             return 0
 
         feed = load_json(args.feed, "jobs_file_unreadable", "--feed")
-        verdict = check(feed, jobs, receipts, payees, now)
+        verdict = check(feed, jobs, receipts, payees, now, operators)
         print(json.dumps(verdict, indent=2, sort_keys=False))
         return 0 if verdict["ok"] else 1
     except Refusal as exc:

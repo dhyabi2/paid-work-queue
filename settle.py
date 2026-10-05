@@ -374,7 +374,10 @@ def settle(root, job_id, block_hash, delivery_url, node_url, node=None,
             # validate.py: "no receipt, no settled state". The job points at the
             # receipt, and cross_check compares the two in both directions.
             candidate["receipt_id"] = receipt_id
-    stats = validate.compute_stats(after_jobs, after_receipts)
+    # The same declared operator set validate.py reads, so the stats this
+    # writes and the stats CI regenerates cannot disagree.
+    stats = validate.compute_stats(after_jobs, after_receipts,
+                                   validate.read_operator_accounts(root))
 
     if dry_run:
         if as_json:
