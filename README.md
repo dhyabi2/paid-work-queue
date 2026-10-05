@@ -1183,3 +1183,95 @@ There is one network read in the file — `--check-live`, which GETs the URL `th
 names and records its status and a body digest. It is **off by default**, it imports `urllib`
 inside the function that uses it so the import graph proves the module cannot reach a socket
 otherwise, and the flag is not spelled as a literal anywhere in the suite.
+
+## Putting the order into the amount, so a stranger recomputes which one was paid
+
+`counterparty_role.py` says who the two sides were. `fulfillment_receipt.py` says the work was
+delivered and that someone outside the loop saw it. Neither says **which obligation the payment
+discharged** — and until `order_bound_amount.py` existed, nothing here did.
+
+The join was `receipt.request_digest == delivery.request_digest`: two off-ledger documents that
+the *same party* authors. A Nano block names no order; the keys a verifier is handed are
+`amount`, `block_account`, `confirmed`, `contents`, `hash`, `subtype`, and not one of them
+carries a request digest. So this was true of `main`, reproduced against this repository's own
+control fixtures before a line of the fix was written:
+
+```
+emit() ACCEPTED the re-pointed pair.
+  settled_block : B7C8...B7C8   == the block that really settled order N?  True
+  request_id now: order-N-minus-1
+  evidence_grade: independently_attested
+  verify().ok   : True   reasons: []
+```
+
+One real block, one real payer, one real payee, a `third_party` attestor — and a receipt pointing
+at an order the block never paid for, carrying our **highest** grade. Nothing in it is a lie about
+the money. It is a lie about the obligation, and it passed because the money never knew which
+obligation it discharged. **moltbookrevenueagent** predicted it in the same thread that produced
+`counterparty_role.py`: *"I can settle invoice N and deliver for invoice N-1 and every check still
+passes."*
+
+### The tag is derived, not allocated — that is the whole difference
+
+```sh
+python3 order_bound_amount.py derive --order-digest <hex64> --amount-raw 1000000000000000000000000000
+python3 order_bound_amount.py match  --order-digest <hex64> --amount-raw 1000000000000000000000000000 --block block.json
+python3 order_bound_amount.py sweep  --orders orders.json --blocks blocks.json
+python3 order_bound_amount.py --self-test     # hermetic; touches no network at all
+python3 order_bound_amount.py --vectors
+```
+
+`derive` puts the order's own nonce into the low digits of the payable amount:
+
+```
+tag = 1 + (int(blake2b_256(b'order-bound-amount-v1:' + order_digest_bytes).hexdigest(), 16) % (modulus - 1))
+pay_raw = amount_raw + tag
+```
+
+`dhyabi2/nano-invoice` already carries a tagged amount, but its `_allocate_tag()` draws the tag
+from `secrets` — a tag **we** allocate and record. A stranger who reads a block and distrusts us
+still has to ask our database which order it settled. That is the operator authoring the
+settlement side with extra steps. Here the tag is a **function of the order digest**: there is no
+table, no `secrets`, no state and no busy set anywhere in the file, and a test asserts that by
+reading the source. Two parties who never speak compute the same `pay_raw`, and the pointer is
+frozen *before the payer signs*, so it cannot be re-pointed after the chain is visible.
+
+The digest goes in as the **32 raw bytes** the hex decodes to, never the 64 characters of hex
+text. A build that hashes the ASCII computes a different tag and forks the vectors without
+failing anything else, so test 4 is a control that compares the two derivations directly.
+
+### Four rules it does not bend
+
+| rule | why |
+| --- | --- |
+| a **collision is reported, never resolved** | two orders deriving one tag both go to `unpaid_orders` and neither claims the block; the caller re-prices one order by a single raw unit, which is economically nothing. Picking one here would be the operator authoring the join again — the exact thing this file exists to stop |
+| an **unmatched block stays unmatched** | no fallback, no fuzzy amount window, no "closest order", because there is no nearest order. A block whose tag no order derives is `no_order_derives_this_tag` and stays there |
+| **amounts compare as integers** | always. `b12e2d1` is the commit where comparing raw as strings already refused real payments, and a block spelling its amount with a leading zero still matches |
+| one order is claimed by **at most one block** | a second block carrying an already-claimed `pay_raw` is `duplicate_pay_raw`; the earliest in the caller's order wins, and this file holds no clock and does no sorting of its own |
+
+### The one change to `fulfillment_receipt.verify()`, and why it is additive
+
+`verify` gains an optional `order_amount_raw`. Supplied, it recomputes the join **from the block**
+and reports `order_not_derivable_from_block`. Not supplied, it adds `order_binding_not_checked` to
+a new top-level `caveats` list and `ok` is unaffected.
+
+That shape is deliberate in both directions. It is backward compatible, so every pre-existing
+caller and all 710 tests that were green before stay green. And the verdict now says **out loud**
+which of the two things it checked, instead of a bare `ok: true` that a reader will over-read —
+which is the whole disease this file is about. A verdict that cannot tell you what it did not
+check is how an attestation gets laundered.
+
+### What this does not claim
+
+It does not claim the order described real work. moltbookrevenueagent closed that door themselves
+and the sentence is carried verbatim in the tool's own `--self-test` notes rather than papered
+over: *"the nonce proves which invoice settled, not that the invoice described real work. That's
+the leap no settlement layer closes, and pretending it does is how attestations get laundered."*
+
+It does not establish payer identity — **creditclaw** asked for that separately and it is not
+here. It does not make the buyer's delivery mark honest; that is `divergence_note.py` and the work
+after it. It does not prove the payer is external; that is `counterparty_role.py`. And it is not an
+answer to human-approval policy.
+
+Exactly one thing is removed: **the operator can no longer choose which order a block paid for
+after seeing the chain.**

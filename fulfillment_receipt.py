@@ -130,6 +130,7 @@ if HERE not in sys.path:
 import authority_receipt  # noqa: E402  - the payment leg, delegated not copied
 import canonical  # noqa: E402  - the one account comparison, reused not copied
 import nanoaddr  # noqa: E402  - the vendored codec; canonical puts vendor/ on sys.path
+import order_bound_amount  # noqa: E402  - the order->amount binding, reused not copied
 
 VERSION = 1
 TOOL = "fulfillment_receipt"
@@ -197,6 +198,11 @@ NOTE_CODES = ("delivered_before_settled",)
 
 # A refusal code that needs `--delivery` to be evaluated at all.
 DELIVERY_DEPENDENT = ("attestation_before_delivery",)
+
+# A refusal code that needs the caller to supply `order_amount_raw`. Without it
+# the payment-to-order join is still two documents the same party authors, and
+# the verdict says so in `caveats` rather than implying it checked.
+ORDER_DEPENDENT = ("order_not_derivable_from_block",)
 
 LEDGER_NOTE = (
     "Nano has no memo field, no VM and no contract logs, so nothing about "
@@ -572,7 +578,7 @@ def emit(receipt, delivery, attestations=None, now=None):
 # --------------------------------------------------------------------------
 
 def verify(fulfillment, receipt, grant, block, delivery=None, now=None,
-           fetch=None):
+           fetch=None, order_amount_raw=None):
     """Recompute the whole evidence unit from facts a stranger can re-fetch.
 
     Reports EVERY applicable reason rather than the first, as the spec requires.
@@ -618,6 +624,36 @@ def verify(fulfillment, receipt, grant, block, delivery=None, now=None,
 
     paid_digest = receipt.get("request_digest") if isinstance(receipt, dict) else None
     check("request_digest_mismatch", paid_digest != doc["request_digest"])
+
+    # -- 1b. the payment-to-order join, recomputed from the BLOCK ------------
+    # Without this, `request_digest` agreeing between the receipt and the
+    # delivery proves only that one party wrote the same digest twice: the
+    # block names no order, so a receipt re-pointed at a different order
+    # verified ok=True at the top grade. Reproduced against this file's own
+    # `_control_set()` before the check existed.
+    caveats = []
+    if order_amount_raw is None:
+        caveats.append("order_binding_not_checked")
+        notes.append(
+            "no order_amount_raw was supplied, so the payment-to-order join "
+            "was NOT recomputed from the block: request_digest agreeing "
+            "between the receipt and the delivery is two documents the same "
+            "party authors. Supply the order's price to check it.")
+    else:
+        try:
+            bound = order_bound_amount.match(
+                doc["request_digest"], order_amount_raw, block)
+        except order_bound_amount.Refusal as exc:
+            check("order_not_derivable_from_block", True)
+            notes.append("the order binding could not be read (%s: %s)"
+                         % (exc.code, exc.detail))
+        else:
+            check("order_not_derivable_from_block", not bound["matched"])
+            if not bound["matched"]:
+                notes.append(
+                    "the settled block does not pay this order: %s"
+                    % "; ".join(bound["messages"][code]
+                                for code in bound["reasons"]))
 
     # -- 2. the delivery digest, when the delivery was supplied --------------
     delivered = None
@@ -695,7 +731,7 @@ def verify(fulfillment, receipt, grant, block, delivery=None, now=None,
                 check("artifact_changed",
                       digest(answer.body or b"") != doc["artifact_sha256"].lower())
 
-    order = REASON_ORDER + DELIVERY_DEPENDENT
+    order = REASON_ORDER + DELIVERY_DEPENDENT + ORDER_DEPENDENT
     verdict = {
         "tool": TOOL,
         "version": VERSION,
@@ -709,6 +745,7 @@ def verify(fulfillment, receipt, grant, block, delivery=None, now=None,
         "recomputed_grade": recomputed,
         "independent_attestor_count": len(independent),
         "payment": payment,
+        "caveats": caveats,
         "notes": notes,
     }
     return verdict
@@ -881,11 +918,23 @@ def _negative_controls():
                                     parts["attestations"], now=CONTROL_NOW)
         parts["receipt"] = dict(parts["receipt"], request_digest=digest(b"another order"))
 
+    def order_not_derivable(parts):
+        # Nothing about the money is touched. The block really settled, for the
+        # real amount, between the real parties - it simply does not carry this
+        # order's derived tag, which is the whole point: before this code
+        # existed, that was indistinguishable from a block that did.
+        parts["fulfillment"] = emit(parts["receipt"], parts["delivery"],
+                                    parts["attestations"], now=CONTROL_NOW)
+        parts["order_amount_raw"] = CONTROL_RAW
+
     def wrong_delivery(parts):
         parts["fulfillment"] = emit(parts["receipt"], parts["delivery"],
                                     parts["attestations"], now=CONTROL_NOW)
         parts["delivery"] = dict(parts["delivery"],
                                  acceptance_claimed=["a different claim entirely"])
+
+    case("order_not_derivable_from_block", order_not_derivable,
+         fetch=_control_fetch())
 
     def overstated(parts):
         # Only the payee attests, and the receipt is hand-edited to claim the
@@ -950,7 +999,8 @@ def self_test():
     for code, parts in sorted(_negative_controls().items()):
         verdict = verify(parts["fulfillment"], parts["receipt"], parts["grant"],
                          parts["block"], delivery=parts["delivery"],
-                         now=CONTROL_NOW, fetch=parts["fetch"])
+                         now=CONTROL_NOW, fetch=parts["fetch"],
+                         order_amount_raw=parts.get("order_amount_raw"))
         if verdict["ok"] is not False or code not in verdict["reasons"]:
             ok = False
             failures.append({"control": code, "expected_ok": False,
