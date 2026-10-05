@@ -1,0 +1,6 @@
+{
+  "_what": "Every Nano account this operator controls. Declared here, never discovered from the data: with none declared, every row of a self-referential book reads as outside demand, which is how 16-of-328 becomes '328 settlements'.",
+  "_read_by": "external_edge_count.py, through validate.read_operator_accounts; stats.json and feed/jobs.json publish what it decides.",
+  "_when_it_matters": "Empty is correct today, because receipts.json is empty and there is nothing to classify. The moment a receipt lands, declare every account here: until then the demand numbers publish as null with the reason that says why, and never as a count of strangers.",
+  "operator_accounts": []
+}

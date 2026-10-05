@@ -512,7 +512,7 @@ class ParseAndApply(unittest.TestCase):
                                         text=True, timeout=600)
                 self.assertEqual(result.returncode, 0,
                                  result.stdout[-3000:] + result.stderr[-3000:])
-        self.assertIn("20/20", result.stdout)
+        self.assertIn("21/21", result.stdout)
 
     # 14 ------------------------------------------------------------------
     def test_14_readme_carries_a_copy_pasteable_body_that_parses(self):

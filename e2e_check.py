@@ -175,9 +175,29 @@ def main():
           code == 0 and "jobs_settled=1" in output and "jobs_open=1" in output, output)
     with open(os.path.join(root, "stats.json")) as handle:
         stats = json.load(handle)
-    check("13b stats.json carries all six counters",
-          sorted(stats) == ["first_settlement", "jobs_open", "jobs_settled",
-                            "last_settlement", "paid_xno_total", "sellers_paid"],
+    check("13b stats.json carries every counter and nothing else",
+          sorted(stats) == ["demand_note", "demand_reasons", "demand_signal",
+                            "distinct_external_counterparties",
+                            "external_edges", "first_settlement", "jobs_open",
+                            "jobs_settled", "largest_counterparty_share",
+                            "last_settlement", "operator_accounts_declared",
+                            "operator_authorable", "paid_xno_total",
+                            "sellers_paid", "settlement_count"],
+          json.dumps(stats))
+    # The demand half of 13b, which is the whole reason those fields exist: a
+    # receipt records the payee and not the payer, and no operator set is
+    # declared in this fixture, so the countable numbers must publish as null
+    # with the reason - never as "one stranger paid us". The settlement count
+    # is still published, and so is operator_authorable, which at one row with
+    # nothing shown to be external is that one row.
+    check("13c a row we cannot classify publishes null and a reason, not demand",
+          stats["settlement_count"] == 1
+          and stats["distinct_external_counterparties"] is None
+          and stats["external_edges"] is None
+          and stats["demand_signal"]["value"] is None
+          and stats["demand_signal"]["not"] == "settlement_count"
+          and stats["demand_reasons"] == ["payer_not_recorded"]
+          and stats["operator_authorable"] == 1,
           json.dumps(stats))
 
     # 14 - money is exact

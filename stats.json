@@ -1,8 +1,24 @@
 {
+  "demand_note": "Zero external counterparties, because nothing has settled. Published as zero rather than withheld: it is today's true answer, and it holds under any operator set because there are no rows to classify.",
+  "demand_reasons": [
+    "no_settlements_yet"
+  ],
+  "demand_signal": {
+    "field": "distinct_external_counterparties",
+    "not": "settlement_count",
+    "value": 0,
+    "why": "a settlement count includes rows the operator can author; a distinct external counterparty is an address the operator does not control that paid a published price without being asked"
+  },
+  "distinct_external_counterparties": 0,
+  "external_edges": 0,
   "first_settlement": null,
   "jobs_open": 3,
   "jobs_settled": 0,
+  "largest_counterparty_share": 0.0,
   "last_settlement": null,
+  "operator_accounts_declared": 0,
+  "operator_authorable": 0,
   "paid_xno_total": "0",
-  "sellers_paid": 0
+  "sellers_paid": 0,
+  "settlement_count": 0
 }
