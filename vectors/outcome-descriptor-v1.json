@@ -1,0 +1,242 @@
+{
+  "_why_halves": "An order digest and a descriptor digest are each 64 hex characters and validate.scan_for_secrets refuses any standalone 64-hex run in a committed file, because a Nano seed looks exactly like one. Each is carried as two 32-character halves and joined by the reader rather than weakening the gate.",
+  "classify": [
+    {
+      "buyer_options": [
+        "accept"
+      ],
+      "claim": {
+        "class": "delivered"
+      },
+      "class": "delivered",
+      "idempotency_key_state": "consumed",
+      "reasons": [],
+      "replacement_purchase_frozen": false,
+      "settlement_raw": "1000000000000000000000000000",
+      "terminal": true
+    },
+    {
+      "buyer_options": [
+        "accept",
+        "reject",
+        "authorize_continuation"
+      ],
+      "claim": {
+        "class": "partial_result",
+        "units_delivered": 30
+      },
+      "class": "partial_result",
+      "idempotency_key_state": "consumed",
+      "reasons": [],
+      "replacement_purchase_frozen": false,
+      "settlement_raw": "600000000000000000000000000",
+      "terminal": true
+    },
+    {
+      "buyer_options": [
+        "accept"
+      ],
+      "claim": {
+        "class": "never_reserved"
+      },
+      "class": "never_reserved",
+      "idempotency_key_state": "released",
+      "reasons": [],
+      "replacement_purchase_frozen": false,
+      "settlement_raw": "0",
+      "terminal": true
+    },
+    {
+      "buyer_options": [
+        "accept"
+      ],
+      "claim": {
+        "class": "rejected_by_buyer"
+      },
+      "class": "rejected_by_buyer",
+      "idempotency_key_state": "released",
+      "reasons": [],
+      "replacement_purchase_frozen": false,
+      "settlement_raw": "0",
+      "terminal": true
+    },
+    {
+      "buyer_options": [
+        "accept"
+      ],
+      "claim": {
+        "class": "provider_failed"
+      },
+      "class": "provider_failed",
+      "idempotency_key_state": "released",
+      "reasons": [],
+      "replacement_purchase_frozen": false,
+      "settlement_raw": "0",
+      "terminal": true
+    },
+    {
+      "buyer_options": [
+        "accept"
+      ],
+      "claim": {
+        "class": "expired_unclaimed"
+      },
+      "class": "expired_unclaimed",
+      "idempotency_key_state": "released",
+      "reasons": [],
+      "replacement_purchase_frozen": false,
+      "settlement_raw": "0",
+      "terminal": true
+    },
+    {
+      "buyer_options": [
+        "reconcile_at_zero_price"
+      ],
+      "claim": {
+        "class": "timeout_unknown"
+      },
+      "class": "timeout_unknown",
+      "idempotency_key_state": "held_open",
+      "reasons": [],
+      "replacement_purchase_frozen": true,
+      "settlement_raw": "0",
+      "terminal": false
+    },
+    {
+      "buyer_options": [
+        "accept"
+      ],
+      "claim": {
+        "class": "partial_result",
+        "units_delivered": 20
+      },
+      "class": "rejected_by_buyer",
+      "idempotency_key_state": "released",
+      "reasons": [
+        "below_accepted_quality_threshold"
+      ],
+      "replacement_purchase_frozen": false,
+      "settlement_raw": "0",
+      "terminal": true
+    }
+  ],
+  "closed_set": [
+    "delivered",
+    "partial_result",
+    "never_reserved",
+    "rejected_by_buyer",
+    "provider_failed",
+    "expired_unclaimed",
+    "timeout_unknown"
+  ],
+  "descriptor": {
+    "complete": true,
+    "currency": "XNO",
+    "idempotency_key": "order-2026-10-05-0001",
+    "max_capital_held_raw": "1000000000000000000000000000",
+    "max_settlement_from": "delivered",
+    "max_settlement_raw": "1000000000000000000000000000",
+    "outcomes": [
+      {
+        "buyer_may_reject": false,
+        "class": "delivered",
+        "key": "consumed",
+        "settlement_raw": "1000000000000000000000000000"
+      },
+      {
+        "buyer_may_authorize_continuation": true,
+        "buyer_may_reject": true,
+        "class": "partial_result",
+        "key": "consumed",
+        "min_units_accepted": 25,
+        "settlement_basis": "per_unit",
+        "settlement_raw_per_unit": "20000000000000000000000000",
+        "unit": "row",
+        "units_ordered": 50
+      },
+      {
+        "class": "never_reserved",
+        "key": "released",
+        "settlement_raw": "0"
+      },
+      {
+        "class": "rejected_by_buyer",
+        "key": "released",
+        "settlement_raw": "0"
+      },
+      {
+        "class": "provider_failed",
+        "key": "released",
+        "settlement_raw": "0"
+      },
+      {
+        "class": "expired_unclaimed",
+        "key": "released",
+        "settlement_raw": "0"
+      },
+      {
+        "class": "timeout_unknown",
+        "key": "held_open",
+        "resolution_deadline": "2026-10-12T00:00:00Z",
+        "resolves_to": [
+          "delivered",
+          "partial_result",
+          "never_reserved",
+          "provider_failed"
+        ],
+        "settlement_raw": "0"
+      }
+    ],
+    "price_raw": "1000000000000000000000000000",
+    "reconciliation_deadline": "2026-10-12T00:00:00Z"
+  },
+  "descriptor_digest_halves": [
+    "45ba51ccffd49ae2abd5f398e6cdc6ba",
+    "62e3d18869a97efe8e28e0aa567c5934"
+  ],
+  "digest_note": "descriptor_digest is taken over the canonical bytes with descriptor_digest itself removed, because a digest cannot cover itself. A proxy, editor or framework that re-serialises the JSON changes the bytes, and the descriptor is then refused as not the one published.",
+  "order_digest_halves": [
+    "a557c7757c235a3f86b649124554bc7a",
+    "038e25d905544c16f5139df3d82dd3af"
+  ],
+  "order_digest_preimage": "outcome-descriptor vector order",
+  "policy_fail": {
+    "approvable": false,
+    "failed": [
+      {
+        "limit": "999999999999999999999999999",
+        "ok": false,
+        "rule": "max_settlement_raw <= policy.ceiling_raw",
+        "saw": "1000000000000000000000000000"
+      }
+    ],
+    "policy": {
+      "capital_ceiling_raw": "5000000000000000000000000000",
+      "ceiling_raw": "999999999999999999999999999",
+      "currencies": [
+        "XNO"
+      ]
+    }
+  },
+  "policy_pass": {
+    "approvable": true,
+    "failed": [],
+    "policy": {
+      "capital_ceiling_raw": "5000000000000000000000000000",
+      "ceiling_raw": "5000000000000000000000000000",
+      "currencies": [
+        "XNO"
+      ]
+    }
+  },
+  "purpose": "Hand this to anyone implementing the outcome descriptor, in any language. Reproducing every settlement_raw and every idempotency_key_state below means your descriptor agrees with paid-work-queue, and an operator policy written against it will approve the same descriptors ours does.",
+  "resolves_to": [
+    "delivered",
+    "partial_result",
+    "never_reserved",
+    "provider_failed"
+  ],
+  "scope_note": "This does not make the seller perform, does not verify delivery (fulfillment_receipt.py), does not prove the counterparty is external (counterparty_role.py), does not bind the payment to the order (order_bound_amount.py) and does not reconcile two disagreeing records (divergence_note.py). It makes the worst case of a paid call a number a policy can compare against a ceiling, before any money moves.",
+  "title": "outcome-descriptor v1 conformance vector",
+  "v": 1
+}
