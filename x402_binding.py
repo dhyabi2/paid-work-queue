@@ -314,6 +314,27 @@ def _confirmed(value):
     return isinstance(value, str) and value.strip().lower() == "true"
 
 
+def _destination(block):
+    """The account a send credits, wherever the node put `link_as_account`.
+
+    `block_info` with `json_block=true` answers the signed block under
+    `contents`, so `link_as_account` is nested in a real answer and absent from
+    its top level; a flattened record carries it at the top level instead.
+    Reading only one of the two refuses a payment that arrived in full, to the
+    quoted address, for the quoted amount. `settle.py`, `authority_receipt`'s
+    `_block_destination` and `counterparty_role`'s `block_destination` all read
+    both, and this agrees with them rather than diverging.
+
+    Deliberately NOT gated on `subtype`, unlike its siblings: a block that is
+    not a send has its own reason code here, and swallowing it into
+    `pay_to_mismatch` would report two refusals for one defect.
+    """
+    contents = block.get("contents")
+    if isinstance(contents, dict) and contents.get("link_as_account") is not None:
+        return contents.get("link_as_account")
+    return block.get("link_as_account")
+
+
 def _settled_at(value):
     """The block's own timestamp: RFC3339 with an offset, or a unix integer.
 
@@ -392,7 +413,7 @@ def verify(req, block, now, seen_nonces=None):
 
     # By public key, so the legacy `xrb_` spelling of one account is that
     # account: refusing it would refuse a payment that arrived.
-    destination = block.get("link_as_account")
+    destination = _destination(block)
     quoted = nanoaddr.validate(req["pay_to"]) if isinstance(
         req.get("pay_to"), str) else {"valid": False}
     arrived = nanoaddr.validate(destination) if isinstance(
