@@ -1,0 +1,128 @@
+{
+  "_why_halves": "An order digest is 64 hex characters and validate.scan_for_secrets refuses any standalone 64-hex run in a committed file, because a Nano seed looks exactly like one. Each digest is carried as two 32-character halves and joined by the reader rather than weakening the gate - the same choice vectors/grant-mint-v1.json made for sha256_halves.",
+  "bytes_note": "The order digest is hashed as the 32 raw bytes the hex decodes to, never the hex text. A build that hashes the ASCII computes a different tag and forks the vectors without failing anything else.",
+  "collision": {
+    "modulus": 1000,
+    "note": "A collision is reported, never resolved. Two orders whose digests derive the same tag both go to unpaid_orders and neither claims the block; at modulus 10**6 that is about one pair in a million. The caller re-prices one order by one raw unit - economically nothing - which changes the expected pay_raw. Picking one here would be the operator authoring the join again, which is the thing this file exists to stop.",
+    "orders": [
+      {
+        "order_digest_halves": [
+          "f65cc4bf6ba9b0c5ccd40991f4f398a4",
+          "b594f6dd639748d9430d48f56a1ec827"
+        ],
+        "preimage": "collision-probe-59"
+      },
+      {
+        "order_digest_halves": [
+          "9b1bebb3f50aa0f717510e30c863ce8d",
+          "f0d9f23532f065858fa5a250ca03a22c"
+        ],
+        "preimage": "collision-probe-93"
+      }
+    ],
+    "tag": 542
+  },
+  "derivation": "tag = 1 + (int(blake2b_256(b'order-bound-amount-v1:' + order_digest_bytes).hexdigest(), 16) % (modulus - 1))",
+  "derive": [
+    {
+      "amount_raw": "1000000000000000000000000000",
+      "modulus": 1000000,
+      "order_digest_halves": [
+        "0009bc6cc19fd42ded42c170dbce4939",
+        "3a5d68c99dc3a4b65ca71b84b3844faf"
+      ],
+      "pay_raw": "1000000000000000000000532742",
+      "preimage": "order-bound-amount vector A",
+      "tag": 532742
+    },
+    {
+      "amount_raw": "1000000000000000000000000000",
+      "modulus": 1000000,
+      "order_digest_halves": [
+        "e4f3c6724c327bd2ef005b0504032f34",
+        "16dc2bbf6542115f55cee9fef7811449"
+      ],
+      "pay_raw": "1000000000000000000000110486",
+      "preimage": "order-bound-amount vector B",
+      "tag": 110486
+    },
+    {
+      "amount_raw": "1000000000000000000000000000",
+      "modulus": 1000000,
+      "order_digest_halves": [
+        "6eda49ec871a9ad087cd8e6cf9988847",
+        "d5939819e7475b2f029a39519515cf3d"
+      ],
+      "pay_raw": "1000000000000000000000273731",
+      "preimage": "order-bound-amount vector C",
+      "tag": 273731
+    },
+    {
+      "amount_raw": "1000000000000000000000000000",
+      "modulus": 1000,
+      "order_digest_halves": [
+        "0009bc6cc19fd42ded42c170dbce4939",
+        "3a5d68c99dc3a4b65ca71b84b3844faf"
+      ],
+      "pay_raw": "1000000000000000000000000275",
+      "preimage": "order-bound-amount vector A",
+      "tag": 275
+    },
+    {
+      "amount_raw": "1000000000000000000000000000",
+      "modulus": 1000000000000,
+      "order_digest_halves": [
+        "0009bc6cc19fd42ded42c170dbce4939",
+        "3a5d68c99dc3a4b65ca71b84b3844faf"
+      ],
+      "pay_raw": "1000000000000000078194454548",
+      "preimage": "order-bound-amount vector A",
+      "tag": 78194454548
+    }
+  ],
+  "match": [
+    {
+      "amount_raw": "1000000000000000000000000000",
+      "block_amount_raw": "1000000000000000000000532742",
+      "expected_pay_raw": "1000000000000000000000532742",
+      "label": "matched",
+      "matched": true,
+      "preimage": "order-bound-amount vector A",
+      "reasons": [],
+      "tag_expected": 532742,
+      "tag_observed": 532742
+    },
+    {
+      "amount_raw": "1000000000000000000000000000",
+      "block_amount_raw": "1000000000000000000000532743",
+      "expected_pay_raw": "1000000000000000000000532742",
+      "label": "tag_mismatch",
+      "matched": false,
+      "preimage": "order-bound-amount vector A",
+      "reasons": [
+        "tag_mismatch",
+        "amount_above_price"
+      ],
+      "tag_expected": 532742,
+      "tag_observed": 532743
+    },
+    {
+      "amount_raw": "1000000000000000000000000000",
+      "block_amount_raw": "999999999999999999999532742",
+      "expected_pay_raw": "1000000000000000000000532742",
+      "label": "amount_below_price",
+      "matched": false,
+      "preimage": "order-bound-amount vector A",
+      "reasons": [
+        "amount_below_price"
+      ],
+      "tag_expected": 532742,
+      "tag_observed": 532742
+    }
+  ],
+  "preimage_note": "Every order_digest here is sha256(preimage) in lowercase hex, so nothing in this file has to be taken on trust: recompute the digest from the preimage, then recompute the tag from the digest.",
+  "purpose": "Hand this to anyone implementing the order-bound amount, in any language. Reproducing every `tag` and `pay_raw` below means your derivation agrees with paid-work-queue, and an amount you quote will match against order_bound_amount.py.",
+  "scope_note": "In moltbookrevenueagent's words: the nonce proves WHICH invoice settled, not that the invoice described real work - that is the leap no settlement layer closes, and pretending it does is how attestations get laundered. This file removes one thing only: the operator can no longer choose which order a block paid for after seeing the chain.",
+  "title": "order-bound-amount v1 conformance vector",
+  "v": 1
+}

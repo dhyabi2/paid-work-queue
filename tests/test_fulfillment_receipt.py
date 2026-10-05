@@ -506,7 +506,8 @@ class NoNetworkWithoutFetch(unittest.TestCase):
         self.assertNotIn("artifact_unreachable", verdict["checked"])
 
     def test_09_this_file_imports_no_network_module_at_all(self):
-        local = {"authority_receipt", "canonical", "nanoaddr", "grant_mint"}
+        local = {"authority_receipt", "canonical", "nanoaddr", "grant_mint",
+                 "order_bound_amount"}
         for entry in import_graph():
             module, function = entry["module"], entry["function"]
             root = module.split(".")[0]
@@ -739,9 +740,11 @@ class TheSelfTest(unittest.TestCase):
 
     def test_13_self_test_has_a_control_per_refusal_code(self):
         from fulfillment_receipt import (
-            DELIVERY_DEPENDENT, REASON_ORDER, _negative_controls)
+            DELIVERY_DEPENDENT, ORDER_DEPENDENT, REASON_ORDER,
+            _negative_controls)
         self.assertEqual(set(_negative_controls()),
-                         set(REASON_ORDER) | set(DELIVERY_DEPENDENT),
+                         set(REASON_ORDER) | set(DELIVERY_DEPENDENT)
+                         | set(ORDER_DEPENDENT),
                          "a refusal code has no negative control, so it is a "
                          "check that has never been proven able to fail")
 
