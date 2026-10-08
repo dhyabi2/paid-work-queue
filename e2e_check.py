@@ -387,6 +387,33 @@ def main():
           and os.path.exists(journal),
           gate_before + validate_output)
 
+    # 26 is the money question the journal exists to answer, asked of the
+    # caller that answers it: `settle.py`. It matches a row on amount and
+    # payee, so a `payee` the loader let through unparsed would make the row
+    # invisible to the match rather than refused - and `settle.py` would be
+    # told nothing is in flight for a request that already carries a signed
+    # block. Measured through the real consult, on a journal on disk, with one
+    # character of the payee rewritten the way an editor would.
+    probe = (
+        "import json,os,sys;"
+        "sys.path[:0]=[%r,os.path.join(%r,'vendor')];"
+        "import settle;"
+        "d=json.load(open(%r));"
+        "d['attempts'][0]['payee']=d['attempts'][0]['payee'][:-1]+'1';"
+        "open(%r,'w').write(json.dumps(d,indent=1));"
+        "os.environ['RETRY_SAFETY_JOURNAL']=%r;"
+        "\ntry:\n"
+        " settle.consult_retry_journal(%r,'job','%s','%s','E'*64);"
+        " print('PROCEEDED')\n"
+        "except settle.Refused as e:\n print('REFUSED', e.code)\n"
+        % (retry_root, retry_root, journal, journal, journal, retry_root,
+           SELLER, PRICE_RAW))
+    done = subprocess.run([sys.executable, "-c", probe], cwd=retry_root,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    consult = done.stdout.decode("utf-8")
+    check("26 a tampered payee stops the settle instead of going quiet",
+          "REFUSED 11" in consult, consult)
+
     passed = sum(1 for _, ok, _ in CHECKS if ok)
     print("\n%d/%d checks pass" % (passed, len(CHECKS)))
     return 0 if passed == len(CHECKS) else 1

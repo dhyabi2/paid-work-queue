@@ -515,6 +515,36 @@ def checked_journal(document):
         # which is the shape a hand-edited journal arrives in.
         checked_order_digest(joined(attempt["order_digest_halves"]) or "")
         checked_amount_raw(attempt["amount_raw"])
+        # `payee` and `amount_raw` are the two keys `binding_for_payment`
+        # matches a send on, and an unparseable one is not merely reported
+        # wrong - `same_account` answers False for it, so the row is SKIPPED
+        # and a signed block stops blocking. That is the one error direction
+        # `binding_for_payment` and `settle.py` both say they must never take:
+        # "a false clearance costs a second payment". `amount_raw` is checked
+        # the line above; this is the other half of the same key.
+        checked_payee(attempt["payee"])
+        # A hash is checked for the same reason one line further on: the
+        # comparisons at `record_signed` and `binding_for_payment` are text,
+        # and a hash has two spellings. Those two sites fail CLOSED on a
+        # mismatch, so the cost is a refused rebroadcast rather than a second
+        # send - but a journal that cannot hold the lower-case spelling at all
+        # is the stronger statement, and it is the one this file makes
+        # everywhere else.
+        if attempt["block_hash"] is not None:
+            checked_block_hash(attempt["block_hash"])
+        # They are written in one breath by `record_signed` and never cleared,
+        # so one without the other did not come from this build. The dangerous
+        # half is a block with no hash: `safe_action` still answers
+        # BROADCAST_SAME_BLOCK, and nothing downstream can name what went out.
+        if (attempt["signed_block"] is None) != (attempt["block_hash"] is None):
+            raise Refusal(
+                "bad_journal",
+                "attempts[%d] carries %s but not the other; a signed block "
+                "and its hash are written together and neither is ever "
+                "cleared"
+                % (index,
+                   "a signed block" if attempt["block_hash"] is None
+                   else "a block hash"))
         if not isinstance(attempt["history"], list):
             raise Refusal("bad_journal",
                           "attempts[%d].history must be a list" % index)
@@ -1229,6 +1259,25 @@ def self_test():
             lambda: checked_payee(address[:-1] + ("1" if address[-1] != "1"
                                                   else "3")),
             "a payee whose checksum fails")
+
+    # The three above this line check a VALIDATOR. These check that the LOADER
+    # calls it, which is the half that was missing: `payee` is one of the two
+    # keys `binding_for_payment` matches on, and an unparseable one made the
+    # row invisible to it rather than refused.
+    def edited(**fields):
+        document = _copy(signed)
+        document["attempts"][0].update(fields)
+        return lambda: checked_journal(document)
+
+    refuses("bad_payee",
+            edited(payee=address[:-1] + ("1" if address[-1] != "1" else "3")),
+            "a loaded row whose payee does not parse")
+    refuses("bad_block_hash", edited(block_hash=("A" * 64).lower()),
+            "a loaded block hash in the other spelling")
+    refuses("bad_journal", edited(block_hash=None),
+            "a loaded signed block with no hash")
+    refuses("bad_journal", edited(signed_block=None),
+            "a loaded block hash with no block")
 
     controls += 1
     network = {"socket", "http", "urllib", "ssl", "requests"}
