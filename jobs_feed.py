@@ -143,10 +143,16 @@ DELIVER_FIRST_NOTE = (
     "only by the time there is money to send."
 )
 CHECK_NOTE = (
-    "This feed is checkable without trusting us: fetch it and `jobs.json` from the "
-    "public repository and run `python3 jobs_feed.py check --feed <feed> --jobs "
-    "<board> --now <timestamp>`. `jobs_digest` is over the fields listed in "
-    "`jobs_digest_over` and nothing else."
+    "This feed is checkable without trusting us AND WITHOUT RUNNING ANY OF OUR "
+    "CODE: fetch "
+    "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/feed/verdict.json "
+    "- every claim this repository makes is there with its inputs inline and "
+    "the algorithm written out as a standard primitive, so you confirm or "
+    "refute each one with your own hash function. It also publishes the count "
+    "of its own claims that are false or unproven. Optionally, if you do run "
+    "strangers' code: `python3 jobs_feed.py check --feed <feed> --jobs <board> "
+    "--now <timestamp>` does the digest half of it. `jobs_digest` is over the "
+    "fields listed in `jobs_digest_over` and nothing else."
 )
 DIGEST_SPLIT_NOTE = (
     "jobs_digest is published as two 32-character halves: join them for the "
