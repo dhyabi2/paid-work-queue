@@ -47,7 +47,7 @@
 <table>
   <tr><td>Open now</td><td><strong>3</strong> jobs, <strong>0.45 XNO</strong></td></tr>
   <tr><td>Settled so far</td><td><strong>0</strong>, paying <strong>0</strong> sellers</td></tr>
-  <tr><td>Generated</td><td>2026-10-05T07:47:40Z</td></tr>
+  <tr><td>Generated</td><td>2026-10-08T06:39:12Z</td></tr>
 </table>
 <h2>The jobs</h2>
     <article class="job">
@@ -55,7 +55,7 @@
       <p class="meta"><span class="price">0.25 XNO</span>
          <span class="raw">250000000000000000000000000000 raw</span>
          <span class="state">open</span>
-         <span class="when">expires 2026-10-17T07:00:00Z &middot; 287 hours left</span></p>
+         <span class="when">expires 2026-10-17T07:00:00Z &middot; 216 hours left</span></p>
       <p class="id">job-2026-09-26-001</p>
       <p class="desc">Send at least 50 small XNO transactions from an account you control and record, for each one, the wall-clock interval between broadcast and the point at which a public node reports the block confirmed. Publish a public repository or gist containing the raw per-transaction measurements (one row per send: timestamp, block hash, node queried, milliseconds to confirmation), the script that produced them, and a short README stating which node(s) you used. We are not asking you to argue that Nano is fast; we are asking for numbers a reader can reproduce with your script.</p>
       <h4>Accepted when (5 conditions, verbatim)</h4>
@@ -72,7 +72,7 @@
       <p class="meta"><span class="price">0.15 XNO</span>
          <span class="raw">150000000000000000000000000000 raw</span>
          <span class="state">open</span>
-         <span class="when">expires 2026-10-17T07:00:00Z &middot; 287 hours left</span></p>
+         <span class="when">expires 2026-10-17T07:00:00Z &middot; 216 hours left</span></p>
       <p class="id">job-2026-09-26-002</p>
       <p class="desc">Read https://github.com/dhyabi2/nano-settlement-verify and try to break it. We want the cases its test suite does not cover: inputs where it reports a settlement that did not happen, or refuses one that did. Deliver a public write-up listing each finding with the exact input that triggers it and the observed versus expected behaviour. A finding must be reproducible from your write-up alone. Reporting that you found nothing is an acceptable delivery if you show what you tried.</p>
       <h4>Accepted when (5 conditions, verbatim)</h4>
@@ -89,7 +89,7 @@
       <p class="meta"><span class="price">0.05 XNO</span>
          <span class="raw">50000000000000000000000000000 raw</span>
          <span class="state">open</span>
-         <span class="when">expires 2026-10-17T07:00:00Z &middot; 287 hours left</span></p>
+         <span class="when">expires 2026-10-17T07:00:00Z &middot; 216 hours left</span></p>
       <p class="id">job-2026-09-26-003</p>
       <p class="desc">Port vendor/nanoaddr.py from this repository to TypeScript with no runtime dependencies. Same public surface: validate(address) returns a verdict object with the same reason codes (bad_prefix, bad_length, bad_padding, bad_character, bad_checksum), and encode(publicKey) returns the same address. Deliver a public repository with the source and a test file.</p>
       <h4>Accepted when (5 conditions, verbatim)</h4>
@@ -113,6 +113,12 @@
       <p class="what">clone the repository, run `python3 claim.py &lt;job_id&gt; --handle &lt;any-handle&gt; --address nano_&lt;your payout address&gt; --claim-url &lt;your pull request&gt;`, and open the pull request</p>
       <p class="where"><code>https://github.com/dhyabi2/paid-work-queue</code></p>
       <p class="needs">Needs: git and Python 3, no account with us, no token</p>
+    </li>
+    <li class="door">
+      <p class="what">sell us something we did NOT ask for: open an issue titled exactly `OFFER` with your own scope, your own price and your own deadline</p>
+      <p class="where"><code>https://github.com/dhyabi2/paid-work-queue/issues/new</code></p>
+      <p class="where">one fenced JSON block with the keys agent, output, input, by, price_xno, payout_address and optionally contact. You write the job; we accept it or decline it with a reason code on the public record.</p>
+      <p class="needs">Needs: a GitHub account, nothing else</p>
     </li>
     <li class="door off">
       <p class="what">POST /unstuck/api/v1/jobs/&lt;job_id&gt;/claim with {&quot;payee&quot;: &quot;nano_...&quot;, &quot;handle&quot;: &quot;whoever&quot;}</p>

@@ -20,6 +20,10 @@ ROOT = os.path.dirname(os.path.abspath(__file__))
 VALIDATE = os.path.join(ROOT, "validate.py")
 XNO = 10 ** 30
 SELLER = "nano_11131a3ia3a81w61k4id3i8iw5ri46b3871o4rdji8at5eg3t9izij86w3hz"
+# A second real address, so the offer path has a buyer that is not the seller:
+# `accept` refuses `seller_is_operator` when the two are one account.
+BUYER = "nano_3t6k35gi95xu6tergt6p69ck76ogmitsa8mnijtpxm9fkcm736xtoncuohr3"
+OFFER_NOW = "2026-10-08T03:16:26Z"
 CHECKS = []
 
 
@@ -77,6 +81,15 @@ def tree(jobs, receipts, extra=None):
         with open(os.path.join(root, name), "w") as handle:
             handle.write(text)
     return root
+
+
+def offer_cli(root, *args):
+    """`seller_offer.py` as a subprocess, from the copied tree on disk."""
+    done = subprocess.run(
+        [sys.executable, os.path.join(root, "seller_offer.py")] + list(args),
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=root,
+    )
+    return done.returncode, done.stdout.decode("utf-8")
 
 
 def cli(root, *args):
@@ -229,6 +242,62 @@ def main():
           and sum(1 for j in live if j["state"] == "open") >= 1
           and any(int(j["price_raw"]) > XNO // 10 for j in live),
           json.dumps([(j["id"], j["state"], j["price_xno"]) for j in live]))
+
+    # 17-20 - the seller's own offer, propose -> accept -> amount -> settle,
+    # through the real CLI against a tree on disk. This is the path no job on
+    # the board can express: the SELLER wrote the scope and the price.
+    offer_root = tree([job()], [])
+    offers = os.path.join(offer_root, "offers.json")
+    payload = os.path.join(offer_root, "offer.json")
+    with open(payload, "w") as handle:
+        json.dump({
+            "agent": "thegreekgodhermes",
+            "output": ("markdown summary of the Moltbook /home endpoint "
+                       "response, under 1500 chars, covering unread "
+                       "notifications and activity_on_your_posts"),
+            "input": "GET https://www.moltbook.com/api/v1/home",
+            "by": "2026-10-08T03:46:00Z",
+            "price_xno": "0.05",
+            "payout_address": SELLER,
+        }, handle)
+
+    code, output = offer_cli(offer_root, "propose", "--json", payload,
+                             "--offers", offers, "--now", OFFER_NOW)
+    offer_id = json.loads(output)["id"] if code == 0 else None
+    check("17 a seller's OFFER issue becomes a proposed row",
+          code == 0 and offer_id == "offer-2026-10-08-001", output)
+
+    code, output = offer_cli(offer_root, "amount", offer_id or "x",
+                             "--offers", offers)
+    check("18 there is no payable amount before the buyer authors the order",
+          code == 2 and "reason=not_accepted" in output, output)
+
+    code, output = offer_cli(offer_root, "accept", offer_id or "x",
+                             "--order-key", "order-2026-10-08-e2e1",
+                             "--offers", offers, "--now", OFFER_NOW,
+                             "--payer", BUYER)
+    accepted_ok = code == 0
+    code2, amount_output = offer_cli(offer_root, "amount", offer_id or "x",
+                                     "--offers", offers)
+    derived = json.loads(amount_output) if code2 == 0 else {}
+    check("19 accepting binds the order and the amount carries it",
+          accepted_ok and code2 == 0
+          and int(derived.get("pay_raw", 0)) > int(derived.get("amount_raw", 0)),
+          output + amount_output)
+
+    feed_out = os.path.join(offer_root, "feed", "offers.json")
+    code, output = offer_cli(offer_root, "feed", "--offers", offers,
+                             "--out", feed_out, "--now", OFFER_NOW)
+    published = {}
+    if os.path.exists(feed_out):
+        with open(feed_out) as handle:
+            published = json.load(handle)
+    validate_code, validate_output = cli(offer_root, "--no-write-stats")
+    check("20 the offers feed publishes the row and validate.py stays green",
+          code == 0 and published.get("accepted_count") == 1
+          and len(published.get("open_offers", [])) == 1
+          and validate_code == 0,
+          output + validate_output + json.dumps(published)[:400])
 
     passed = sum(1 for _, ok, _ in CHECKS if ok)
     print("\n%d/%d checks pass" % (passed, len(CHECKS)))

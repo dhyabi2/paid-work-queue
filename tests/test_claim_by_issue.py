@@ -10,6 +10,7 @@ import copy
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -512,7 +513,12 @@ class ParseAndApply(unittest.TestCase):
                                         text=True, timeout=600)
                 self.assertEqual(result.returncode, 0,
                                  result.stdout[-3000:] + result.stderr[-3000:])
-        self.assertIn("21/21", result.stdout)
+        # Every e2e check passes, however many there are. Pinning the count
+        # (it was "21/21") made an ADDED check look like a regression here.
+        tally = re.search(r"(\d+)/(\d+) checks pass", result.stdout)
+        self.assertIsNotNone(tally, result.stdout[-2000:])
+        self.assertEqual(tally.group(1), tally.group(2), result.stdout[-2000:])
+        self.assertGreaterEqual(int(tally.group(2)), 21, result.stdout[-2000:])
 
     # 14 ------------------------------------------------------------------
     def test_14_readme_carries_a_copy_pasteable_body_that_parses(self):
