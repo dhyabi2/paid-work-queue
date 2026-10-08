@@ -56,6 +56,18 @@ RFC3339_RE = re.compile(
 )
 SKIP_DIRS = {".git", "__pycache__", ".pytest_cache"}
 
+#: Files that are RUNTIME STATE and must never be committed. `attempts.json` is
+#: `retry_safety.py`'s journal: it records a payment request, the signed block
+#: kept for rebroadcast, and what the money bought, and it is the operator's
+#: private reconciliation record rather than a published artifact. Committing it
+#: would publish a payment history nobody asked us to publish and would make the
+#: journal's own append-only rule a matter of review rather than of the file
+#: system. The secret gate above already refuses what a committed one would
+#: most likely carry; this refuses the file itself, by name, so the answer does
+#: not depend on what happens to be in it today.
+RUNTIME_STATE = ("attempts.json",)
+
+
 
 # --------------------------------------------------------------------------
 # 1. the secret gate - runs before every other check
@@ -500,6 +512,24 @@ def check_append_only(old_document, new_document):
     return errors
 
 
+def tracked_runtime_state(root):
+    """Names from `RUNTIME_STATE` that git tracks here. `[]` for a clean tree.
+
+    Tolerates the absence of git the same way `receipts_at_ref` does: a tree
+    with no repository cannot be tracking anything, and this check must not be
+    the reason a contributor's checkout fails.
+    """
+    try:
+        listed = subprocess.run(
+            ["git", "ls-files", "--"] + list(RUNTIME_STATE),
+            cwd=root, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            check=True,
+        ).stdout.decode("utf-8")
+    except (subprocess.CalledProcessError, OSError, UnicodeDecodeError):
+        return []
+    return sorted({line.strip() for line in listed.splitlines() if line.strip()})
+
+
 def receipts_at_ref(ref, root, path="receipts.json"):
     """receipts.json as of a git ref, or None if it cannot be read."""
     try:
@@ -741,6 +771,15 @@ def run(root, base_ref=None, write_stats=True, out=sys.stdout):
         print("SECRET GATE FAILED - nothing else was checked:", file=out)
         for error in errors:
             print("  %s" % error, file=out)
+        return 1
+
+    tracked = tracked_runtime_state(root)
+    if tracked:
+        print("RUNTIME STATE IS TRACKED - nothing else was checked:", file=out)
+        for name in tracked:
+            print("  %s is runtime state and must not be committed; "
+                  "`git rm --cached %s` and keep it gitignored"
+                  % (name, name), file=out)
         return 1
 
     documents = {}

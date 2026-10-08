@@ -17,6 +17,18 @@ executable form - this repository can prove a payment happened and is
 structurally incapable of causing one. `tests/test_settle.py` enforces it: no
 module reachable from here can sign or send, and nothing but `nanonode.py` can
 open a socket.
+
+It asks `retry_safety.py` one more question first, and only when a journal
+exists. `ockerclaw` (2026-10-06/07, four messages) pointed out that a send hash
+deduplicates SETTLEMENT without making a payment retry safe: a node answering
+"not found" may be lagging, so a second send can still double-pay. The journal
+is where that binding lives, and a journal nothing reads prevents nothing - so
+if `attempts.json` holds a row for this amount and this payee that carries a
+DIFFERENT signed block and is still in flight, this refuses rather than
+recording a receipt for the second of two possible payments. It is a refusal
+and only a refusal: with no journal on disk the behaviour here is byte for byte
+what it was, and nothing in this file writes to the journal, changes an amount
+or changes a destination.
 """
 
 import argparse
@@ -32,6 +44,7 @@ sys.path.insert(0, os.path.join(HERE, "vendor"))
 
 import nanoaddr  # noqa: E402
 import nanonode  # noqa: E402
+import retry_safety  # noqa: E402  - consulted, never written to
 import validate  # noqa: E402
 from claim import format_xno  # noqa: E402  - one renderer for money, not two
 from canonical import (  # noqa: E402  - one comparison, not three
@@ -54,6 +67,13 @@ EXIT_NO_NODE = 6
 EXIT_NODE = 7
 EXIT_NOT_APPENDED = 8
 EXIT_MISMATCH = 9
+EXIT_SEND_MAY_EXIST = 10
+EXIT_BAD_JOURNAL = 11
+
+#: Where `retry_safety.py` keeps the request -> send -> result binding. Absent
+#: by default and gitignored: it is runtime state, so an operator who has never
+#: used it sees no change here at all.
+JOURNAL_ENV = "RETRY_SAFETY_JOURNAL"
 
 
 class Refused(Exception):
@@ -215,6 +235,56 @@ def check_job_is_settleable(job, job_id, receipts_document):
     return address
 
 
+def consult_retry_journal(root, job_id, address, price_raw, block_hash):
+    """Refuse if a DIFFERENT send for this payment may already exist.
+
+    Returns the row this very block belongs to, or None. Raises `Refused` and
+    writes nothing in either direction.
+
+    The binding is by amount and payee, compared by value and by account rather
+    than by spelling, because that is the strongest key this file has: it is
+    handed a job and a block hash, never an order digest. The two error
+    directions are not equal and that is why it errs this way - a false
+    conflict costs one `retry_safety observe` by an operator who knows what
+    they sent, and a false clearance costs a second payment to a stranger.
+
+    A journal that exists and cannot be read is a refusal, not a shrug: the
+    whole point of the file is that an unavailable answer is not a negative
+    one.
+    """
+    path = os.environ.get(JOURNAL_ENV) or os.path.join(
+        root, retry_safety.JOURNAL_FILE)
+    if not os.path.exists(path):
+        return None
+    try:
+        journal = retry_safety.read_journal(path)
+        binding = retry_safety.binding_for_payment(
+            journal, amount_raw=price_raw, payee=address,
+            block_hash=block_hash)
+    except retry_safety.Refusal as exc:
+        raise Refused(
+            EXIT_BAD_JOURNAL,
+            "%s cannot be read (%s), and it is the record of which sends have "
+            "already gone out for this payment. Nothing was written. Fix or "
+            "move the journal; do not settle past it." % (path, exc.code))
+    for row in binding["blocking"]:
+        # `now_utc()` here is a datetime; the journal speaks RFC3339 strings.
+        verdict = retry_safety.safe_action(
+            row, now=retry_safety.stamp(now_utc()))
+        raise Refused(
+            EXIT_SEND_MAY_EXIST,
+            "%s says a send for %s raw to this payee is already in flight as "
+            "block %s (attempt %s, state %s), and block %s is a different one. "
+            "Two blocks for one payment is the double-pay case, so nothing was "
+            "written. The safe action on that attempt is %s. If the money "
+            "really did land, record it there first - `python3 retry_safety.py "
+            "observe %s --kind received` - and settle again."
+            % (os.path.basename(path), price_raw, row["block_hash"],
+               row["idempotency_key"], row["state"], block_hash,
+               verdict["action"], row["idempotency_key"]))
+    return binding["matched"]
+
+
 def interrogate(node, node_url, block_hash, job, job_id, address):
     """One request. Returns nothing; raises on every disagreement."""
     try:
@@ -357,6 +427,10 @@ def settle(root, job_id, block_hash, delivery_url, node_url, node=None,
         raise Refused(EXIT_USAGE, "that looks like a key or seed - refusing")
 
     assert_only_appended(root, receipts_document)
+    # Before the node is asked anything: is there another send for this payment
+    # that may already have landed? A journal nothing reads prevents nothing.
+    consult_retry_journal(root, job_id, address, str(job.get("price_raw")),
+                          block_hash)
 
     if node is None:
         node = nanonode.HttpNanoNode(node_url)

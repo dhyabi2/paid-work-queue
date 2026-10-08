@@ -9,6 +9,7 @@ No network access at any point.
     python3 e2e_check.py        # exit 0 if every check passes
 """
 
+import hashlib
 import json
 import os
 import shutil
@@ -24,6 +25,8 @@ SELLER = "nano_11131a3ia3a81w61k4id3i8iw5ri46b3871o4rdji8at5eg3t9izij86w3hz"
 # `accept` refuses `seller_is_operator` when the two are one account.
 BUYER = "nano_3t6k35gi95xu6tergt6p69ck76ogmitsa8mnijtpxm9fkcm736xtoncuohr3"
 OFFER_NOW = "2026-10-08T03:16:26Z"
+RETRY_NOW = "2026-10-08T07:00:00Z"
+PRICE_RAW = str(25 * XNO // 100)
 CHECKS = []
 
 
@@ -95,6 +98,19 @@ def offer_cli(root, *args):
 def cli(root, *args):
     done = subprocess.run(
         [sys.executable, os.path.join(root, "validate.py"), "--root", root] + list(args),
+        stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=root,
+    )
+    return done.returncode, done.stdout.decode("utf-8")
+
+
+def retry_cli(root, *args):
+    """`retry_safety.py` as a subprocess, from the copied tree on disk.
+
+    A separate process per call on purpose: `ockerclaw`'s test is a restart, and
+    an in-process check cannot tell a derived key from a remembered one.
+    """
+    done = subprocess.run(
+        [sys.executable, os.path.join(root, "retry_safety.py")] + list(args),
         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, cwd=root,
     )
     return done.returncode, done.stdout.decode("utf-8")
@@ -298,6 +314,78 @@ def main():
           and len(published.get("open_offers", [])) == 1
           and validate_code == 0,
           output + validate_output + json.dumps(published)[:400])
+
+    # ------------------------------------------------------------------
+    # 21-25: the retry-safety binding, driven as separate processes.
+    retry_root = tree([job()], [])
+    journal = os.path.join(retry_root, "attempts.json")
+    order_digest = hashlib.blake2b(b"e2e-order", digest_size=32).hexdigest()
+    block_path = os.path.join(retry_root, "block.json")
+    with open(block_path, "w") as handle:
+        json.dump({"type": "state", "account": SELLER, "previous": "b" * 64,
+                   "representative": SELLER, "balance": "0", "link": "c" * 64,
+                   "link_as_account": SELLER, "signature": "d" * 128,
+                   "work": "0" * 16, "subtype": "send"}, handle)
+    code, output = retry_cli(retry_root, "open", "--order-digest", order_digest,
+                             "--amount-raw", PRICE_RAW, "--payee", SELLER,
+                             "--journal", journal, "--now", RETRY_NOW)
+    key = json.loads(output)["idempotency_key"] if code == 0 else "ik-" + "0" * 32
+    check("21 a payment request opens with a key derived from the request",
+          code == 0 and key == "ik-" + hashlib.blake2b(
+              bytes.fromhex(order_digest) + PRICE_RAW.encode("ascii")
+              + SELLER.encode("ascii"), digest_size=16).hexdigest(), output)
+
+    for args in (("signed", key, "--block", block_path, "--block-hash",
+                  block("AB")),
+                 ("broadcast", key),
+                 ("observe", key, "--kind", "confirmed", "--node",
+                  "https://node.invalid")):
+        code, output = retry_cli(retry_root, *args, "--journal", journal,
+                                 "--now", RETRY_NOW)
+        if code != 0:
+            break
+    sent_ok = code == 0
+
+    # The crash: a brand-new process asks for the identical payment again.
+    code, output = retry_cli(retry_root, "open", "--order-digest", order_digest,
+                             "--amount-raw", PRICE_RAW, "--payee", SELLER,
+                             "--journal", journal, "--now", RETRY_NOW)
+    check("22 a restart with the same request is refused, not duplicated",
+          sent_ok and code == 2 and "reason=duplicate_open" in output, output)
+
+    code, output = retry_cli(retry_root, "action", key, "--journal", journal,
+                             "--now", RETRY_NOW)
+    verdict = json.loads(output) if code == 0 else {}
+    check("23 the safe action rebroadcasts the stored block and blocks a new send",
+          code == 0 and verdict.get("blocks_new_send") is True
+          and "REBROADCAST_SAME_BLOCK" in (verdict.get("action") or "")
+          and (verdict.get("rebroadcast_block") or {}).get("signature")
+          == "d" * 128, output)
+
+    for _ in range(12):
+        code, output = retry_cli(retry_root, "observe", key, "--kind",
+                                 "not_found", "--node", "https://node.invalid",
+                                 "--journal", journal, "--now", RETRY_NOW)
+    code, output = retry_cli(retry_root, "report", "--journal", journal,
+                             "--now", RETRY_NOW)
+    report = json.loads(output) if code == 0 else {}
+    check("24 a spent budget holds for the operator and never concludes",
+          code == 0 and report.get("needs_operator") == [key]
+          and report.get("in_flight") == 1, output)
+
+    # The block the operator handed in is a VERBATIM block, and the secret
+    # gate refuses one - which is the whole reason the journal stores long hex
+    # in parts. So the input is removed, as an operator would, and the journal
+    # is left where validate.py walks: the gate must be clean over the file
+    # this module wrote.
+    gate_before = cli(retry_root, "--no-write-stats")[1]
+    os.remove(block_path)
+    validate_code, validate_output = cli(retry_root, "--no-write-stats")
+    check("25 the journal passes the secret gate that refuses a verbatim block",
+          "block.json" in gate_before and validate_code == 0
+          and "attempts.json" not in validate_output
+          and os.path.exists(journal),
+          gate_before + validate_output)
 
     passed = sum(1 for _, ok, _ in CHECKS if ok)
     print("\n%d/%d checks pass" % (passed, len(CHECKS)))
