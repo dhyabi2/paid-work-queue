@@ -43,6 +43,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "vendor"))
 
+import canonical  # noqa: E402
 import nanoaddr  # noqa: E402
 import retry_safety  # noqa: E402
 import validate  # noqa: E402
@@ -859,6 +860,132 @@ class BindingForPaymentTest(unittest.TestCase):
                                     payee=legacy, block_hash=block_hash("E"))
         self.assertEqual([r["idempotency_key"] for r in found["blocking"]],
                          [key])
+
+
+class TheLoaderChecksTheMatchKeysTest(unittest.TestCase):
+    """What a hand-edited journal may say, and what it may not.
+
+    `binding_for_payment` is the only thing standing between a crashed caller
+    and a second send, and it matches a row on two keys: `amount_raw` and
+    `payee`. It does not report an unparseable one - `same_account` answers
+    False for it, so the row is SKIPPED and its signed block stops blocking.
+    That is the one direction `binding_for_payment` and `settle.py` both say in
+    as many words they must never take: "a false clearance costs a second
+    payment to a stranger".
+
+    So these drive the REAL loader over a journal written to disk and then
+    assert the money question, not the validator. `self_test`'s `bad_payee`
+    control calls `checked_payee` directly, which proves the validator works
+    and says nothing about whether the loader uses it - and for one of these
+    fields it did not.
+    """
+
+    def tamper(self, field, value):
+        """A journal through disk, one field rewritten the way an editor would.
+
+        Returns `read_journal`'s answer, or raises the `Refusal` it makes.
+        """
+        journal, key, _ = through_broadcast()
+        with tempfile.TemporaryDirectory() as home:
+            path = os.path.join(home, "attempts.json")
+            write_journal(path, journal)
+            document = json.loads(open(path, encoding="utf-8").read())
+            document["attempts"][0][field] = value
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write(json.dumps(document, indent=1) + "\n")
+            return read_journal(path), key
+
+    def test_an_unparseable_payee_is_refused_rather_than_skipped(self):
+        bad = address()[:-1] + ("1" if address()[-1] != "1" else "3")
+        with self.assertRaises(Refusal) as caught:
+            self.tamper("payee", bad)
+        self.assertEqual(caught.exception.code, "bad_payee")
+
+    def test_without_that_check_the_double_pay_guard_goes_quiet(self):
+        """The consequence, measured on the loaded journal rather than argued.
+
+        An honest journal blocks. The only difference here is one character of
+        a field no state machine compares - and if the loader let it through,
+        `blocking` would be empty and `settle.py` would be told that nothing is
+        in flight for a request that already carries a signed block.
+        """
+        journal, key, _ = through_broadcast()
+        honest = binding_for_payment(journal, amount_raw=AMOUNT,
+                                     payee=address(), block_hash=None)
+        self.assertEqual([r["idempotency_key"] for r in honest["blocking"]],
+                         [key], "the honest journal must block")
+
+        # The mechanism, asserted where it lives rather than demonstrated by
+        # bypassing the loader: `binding_for_payment` reaches the row only if
+        # this answers True, and for an unparseable payee it answers False
+        # instead of raising. That is the skip, and it is why the refusal has
+        # to be at the door - by the time the loop runs, a False here and a
+        # genuinely different payee are the same answer.
+        self.assertFalse(canonical.same_account("", address()))
+        self.assertFalse(canonical.same_account(
+            address()[:-1] + ("1" if address()[-1] != "1" else "3"),
+            address()))
+        self.assertTrue(canonical.same_account(address(), address()))
+
+        with self.assertRaises(Refusal) as caught:
+            self.tamper("payee", "")
+        self.assertEqual(caught.exception.code, "bad_payee")
+
+    def test_a_block_hash_in_the_other_spelling_is_refused(self):
+        """`record_signed` and `binding_for_payment` compare a hash as text.
+
+        Both fail closed on a mismatch, so the cost of the second spelling is a
+        refused rebroadcast rather than a second send. A journal that cannot
+        hold it at all is the stronger statement and the one this file makes
+        for every other field.
+        """
+        with self.assertRaises(Refusal) as caught:
+            self.tamper("block_hash", block_hash().lower())
+        self.assertEqual(caught.exception.code, "bad_block_hash")
+
+        for value in (None, 1, block_hash()[:63], block_hash() + "A"):
+            if value is None:
+                continue
+            with self.subTest(value=value):
+                with self.assertRaises(Refusal) as caught:
+                    self.tamper("block_hash", value)
+                self.assertIn(caught.exception.code,
+                              ("bad_block_hash", "bad_journal"))
+
+    def test_a_signed_block_whose_hash_is_gone_is_refused(self):
+        """The dangerous half of the pair, because nothing else notices.
+
+        `safe_action` still answers BROADCAST_SAME_BLOCK on such a row, so the
+        block goes out and the journal cannot name what went out.
+        """
+        row = through_broadcast()[0]["attempts"][0]
+        verdict = safe_action(dict(row, block_hash=None), now=NOW)
+        self.assertEqual(verdict["action"], SAFE_ACTIONS[row["state"]],
+                         "safe_action does not look at the hash, which is why "
+                         "the loader must")
+        self.assertIn("REBROADCAST_SAME_BLOCK", verdict["action"])
+        with self.assertRaises(Refusal) as caught:
+            self.tamper("block_hash", None)
+        self.assertEqual(caught.exception.code, "bad_journal")
+
+    def test_a_hash_with_no_block_is_refused_too(self):
+        opened_journal, attempt = opened()
+        document = json.loads(json.dumps(opened_journal))
+        document["attempts"][0]["block_hash"] = block_hash()
+        with self.assertRaises(Refusal) as caught:
+            retry_safety.checked_journal(document)
+        self.assertEqual(caught.exception.code, "bad_journal")
+        self.assertIsNone(attempt["signed_block"])
+
+    def test_an_honest_journal_still_loads_unchanged(self):
+        """The control. A refusal that also refuses good journals is not a fix."""
+        journal, key, _ = through_broadcast()
+        with tempfile.TemporaryDirectory() as home:
+            path = os.path.join(home, "attempts.json")
+            write_journal(path, journal)
+            reloaded = read_journal(path)
+        self.assertEqual(reloaded, journal)
+        self.assertEqual(reloaded["attempts"][0]["idempotency_key"], key)
 
 
 class CliTest(unittest.TestCase):

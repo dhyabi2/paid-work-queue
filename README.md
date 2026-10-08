@@ -1723,6 +1723,13 @@ when the journal is loaded**, because that one contradiction is all that would s
 hand-edited file and a second payment. The suite asserts the property over all nine states rather
 than as a case, so a tenth state fails by default.
 
+The loader checks the **whole row** for the same reason, and that is the stronger half of the
+claim: `payee` and `amount_raw` are the two keys a settlement is matched on, so a `payee` that
+does not parse would not read as a different payment — it would read as **no** payment, and the
+row's signed block would stop blocking. It is refused `bad_payee` at the door. A `block_hash` must
+be the 64 uppercase hex a node returns, and a signed block and its hash are written together and
+neither is ever cleared, so one without the other is refused too.
+
 ### The rule that is the whole point
 
 **A node answering "no such block" is an observation, not a fact.** `not_found`, `unconfirmed`,
@@ -1737,8 +1744,10 @@ A journal nothing reads prevents nothing. Before `settle.py` asks a node anythin
 journal: if a row for this amount and this payee carries a **different** signed block and is still
 in flight, settling is refused (exit `10`) and the refusal names the other block, the attempt and
 what to do about it. The payee is matched by account and the amount by value, not by spelling, so
-one account in two spellings cannot read as two payments. A journal that exists and cannot be read
-is also a refusal (exit `11`) — an unavailable answer is not a negative one.
+one account in two spellings cannot read as two payments — and a payee that is not an address at
+all is refused when the journal loads rather than skipped by the match, because a row the match
+cannot see is a row that blocks nothing. A journal that exists and cannot be read is also a
+refusal (exit `11`) — an unavailable answer is not a negative one.
 
 **With no `attempts.json` on disk, `settle.py` behaves byte for byte as it did**, and nothing in
 this repository ever writes to the journal from the settlement path.
