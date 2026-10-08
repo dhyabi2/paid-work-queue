@@ -12,7 +12,12 @@ real money or real time:
     one outside agent (eddie_researcher) handed over an address that failed
     checksum and nothing downstream caught it;
   * receipts are append-only, because a payment that already happened cannot
-    stop having happened.
+    stop having happened;
+  * `offers.json` is append-only in its ids and its states only advance along a
+    legal transition, because an offer is a SELLER's proposal: editing its
+    scope, its price or its payout address after the fact would rewrite what
+    somebody outside this repository offered to sell, and a seller who was
+    told no must be able to read why on the public record.
 
 Usage:
     python3 validate.py [--root DIR] [--base GIT_REF] [--no-write-stats]
@@ -23,6 +28,7 @@ failure otherwise. Each failure names the entry it is about.
 
 import argparse
 import datetime
+import hashlib
 import json
 import os
 import re
@@ -510,6 +516,168 @@ def receipts_at_ref(ref, root, path="receipts.json"):
 
 
 # --------------------------------------------------------------------------
+# 5b. the seller's offers - shape, then append-only
+# --------------------------------------------------------------------------
+
+OFFERS_FILE = "offers.json"
+
+# The offers vocabulary is restated here rather than imported, and the reason is
+# an import-graph rule this file is downstream of. `settle.py` imports this
+# module, and `tests/test_settle.py` asserts that NOTHING transitively reachable
+# from settle.py can open a socket except `nanonode.py`. Importing
+# `seller_offer` here would pull in `order_bound_amount` -> `grant_mint` ->
+# `authority_receipt`, two of which import `urllib`, and the money-send path
+# would silently acquire a route to the network. Relaxing that guard so the
+# validator could share one constant would be the wrong trade.
+#
+# Restating it costs a drift risk, so the drift is made a BUILD FAILURE instead
+# of a comment: `tests/test_seller_offer.py` asserts, field for field and
+# transition for transition, that these four values equal `seller_offer`'s. A
+# field added there and not here turns that test red.
+OFFER_FIELDS = (
+    "id", "agent", "source", "source_url", "scope", "scope_digest_halves",
+    "price_xno", "price_raw", "payout_address", "proposed", "expires", "state",
+    "order_key", "order_digest_halves", "decided", "decline_reason",
+    "receipt_id", "contact",
+)
+OFFER_STATES = ("proposed", "accepted", "declined", "expired", "settled")
+OFFER_TRANSITIONS = (
+    ("proposed", "accepted"), ("proposed", "declined"), ("proposed", "expired"),
+    ("accepted", "settled"), ("accepted", "expired"),
+)
+OFFER_DECLINE_REASONS = (
+    "out_of_scope", "price_above_cap", "duplicate", "cannot_verify_delivery",
+    "no_budget", "seller_is_operator",
+)
+OFFER_SCOPE_KEYS = ("by", "input", "output")
+
+
+def offer_scope_digest(scope):
+    """The published recipe, implemented in four lines of stdlib.
+
+    This is deliberately the reader's own path and not a call into
+    `seller_offer`: the recipe is published on the face of `feed/offers.json`
+    precisely so that it can be recomputed without our code, and a validator
+    that checked it by asking the module that wrote it would be checking
+    nothing.
+    """
+    material = {key: scope[key] for key in OFFER_SCOPE_KEYS}
+    payload = json.dumps(material, sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=False).encode("utf-8")
+    return hashlib.blake2b(payload, digest_size=32).hexdigest()
+
+
+def offer_joined(value):
+    """A digest written as two halves, back as one string. None if it is not."""
+    if (isinstance(value, list) and len(value) == 2
+            and all(isinstance(half, str) for half in value)):
+        return "".join(value)
+    return None
+
+
+def check_offers(document):
+    """Why `document` is not a valid offers document, as a list of failures."""
+    if not isinstance(document, dict) or not isinstance(
+            document.get("offers"), list):
+        return ["offers.json: an offers document is an object with a list "
+                "under the key 'offers'"]
+    errors = []
+    errors.extend("offers.json: %s" % message
+                  for message in _duplicates([o.get("id")
+                                              for o in document["offers"]
+                                              if isinstance(o, dict)]))
+    for index, offer in enumerate(document["offers"]):
+        if not isinstance(offer, dict) or not isinstance(offer.get("id"), str):
+            errors.append("offers.json: offers[%d] is not an offer with a "
+                          "string id" % index)
+            continue
+        where = "offers.json: offer %r" % offer["id"]
+        if offer.get("state") not in OFFER_STATES:
+            errors.append("%s carries state %r, which is not one of %s"
+                          % (where, offer.get("state"),
+                             ", ".join(OFFER_STATES)))
+            continue
+        missing = sorted(set(OFFER_FIELDS) - set(offer))
+        extra = sorted(set(offer) - set(OFFER_FIELDS))
+        if missing or extra:
+            errors.append("%s has the wrong fields: missing %s, unexpected %s"
+                          % (where, missing, extra))
+            continue
+        if account_key(offer["payout_address"]) is None:
+            errors.append("%s: payout_address fails its checksum - an address "
+                          "that names no account is never stored" % where)
+        errors.extend(_check_price(where, offer))
+        if not isinstance(offer["scope"], dict) or set(
+                offer["scope"]) != set(OFFER_SCOPE_KEYS):
+            errors.append("%s: scope must carry exactly %s"
+                          % (where, ", ".join(OFFER_SCOPE_KEYS)))
+        elif offer_joined(offer["scope_digest_halves"]) is None:
+            errors.append("%s: scope_digest_halves must be two 32-character "
+                          "halves" % where)
+        elif offer_joined(offer["scope_digest_halves"]) != offer_scope_digest(
+                offer["scope"]):
+            errors.append("%s: scope_digest does not match the scope it is "
+                          "over. A seller's scope cannot be edited after it "
+                          "was digested." % where)
+        if offer["state"] == "accepted" and not offer["order_key"]:
+            errors.append("%s is accepted but carries no order_key, so no "
+                          "amount binds to it" % where)
+        if offer["state"] == "declined" and (
+                offer["decline_reason"] not in OFFER_DECLINE_REASONS):
+            errors.append("%s is declined with reason %r, which is not one of "
+                          "%s" % (where, offer["decline_reason"],
+                                  ", ".join(OFFER_DECLINE_REASONS)))
+        if offer["state"] == "settled" and not offer["receipt_id"]:
+            errors.append("%s is settled but names no receipt" % where)
+    return errors
+
+
+# An offer's identity, the scope that was digested, the price and the payout
+# address are immutable once written. A seller who was told no must be able to
+# read why, so a declined row is never removed either.
+OFFER_IMMUTABLE_FIELDS = (
+    "id", "agent", "scope", "scope_digest_halves", "price_raw",
+    "payout_address", "proposed",
+)
+
+
+def check_offers_append_only(old_document, new_document):
+    """Every offer in the parent commit must still be there, unedited."""
+    errors = []
+    old = old_document.get("offers") if isinstance(old_document, dict) else None
+    new = new_document.get("offers") if isinstance(new_document, dict) else None
+    if not isinstance(old, list):
+        return errors
+    if not isinstance(new, list):
+        return ["offers.json: 'offers' must be a list"]
+    new_by_id = {o.get("id"): o for o in new if isinstance(o, dict)}
+    legal = set(OFFER_TRANSITIONS)
+    for offer in old:
+        if not isinstance(offer, dict):
+            continue
+        offer_id = offer.get("id")
+        if offer_id not in new_by_id:
+            errors.append(
+                "offers.json is append-only: offer %r was removed. A seller "
+                "who was told no must still be able to read why." % (offer_id,))
+            continue
+        current = new_by_id[offer_id]
+        for field in OFFER_IMMUTABLE_FIELDS:
+            if offer.get(field) != current.get(field):
+                errors.append(
+                    "offers.json: offer %r had %r changed. An offer's scope, "
+                    "price and payout address are immutable once written; "
+                    "correct a mistake by declining it and appending a new "
+                    "one." % (offer_id, field))
+        before, after = offer.get("state"), current.get("state")
+        if before != after and (before, after) not in legal:
+            errors.append(
+                "offers.json: offer %r moved from %s to %s, which is not a "
+                "legal transition." % (offer_id, before, after))
+    return errors
+
+
+# --------------------------------------------------------------------------
 # 6. stats.json
 # --------------------------------------------------------------------------
 
@@ -596,12 +764,35 @@ def run(root, base_ref=None, write_stats=True, out=sys.stdout):
     if not errors:
         errors.extend(cross_check(jobs_document, receipts_document))
 
+    # offers.json is optional: the board worked before the seller had an inbox
+    # and must go on working if the file is absent.
+    offers_path = os.path.join(root, OFFERS_FILE)
+    offers_document = None
+    if os.path.exists(offers_path):
+        try:
+            with open(offers_path, "r", encoding="utf-8") as handle:
+                offers_document = json.load(handle)
+        except OSError as exc:
+            errors.append("%s: cannot be read (%s)" % (OFFERS_FILE, exc))
+        except ValueError as exc:
+            errors.append("%s: is not valid JSON (%s)" % (OFFERS_FILE, exc))
+        else:
+            errors.extend(check_offers(offers_document))
+
     if base_ref:
         previous = receipts_at_ref(base_ref, root)
         if previous is None:
             print("note: no receipts.json at %s; append-only check skipped" % base_ref, file=out)
         else:
             errors.extend(check_append_only(previous, receipts_document))
+        if offers_document is not None:
+            previous_offers = receipts_at_ref(base_ref, root, OFFERS_FILE)
+            if previous_offers is None:
+                print("note: no %s at %s; append-only check skipped"
+                      % (OFFERS_FILE, base_ref), file=out)
+            else:
+                errors.extend(check_offers_append_only(previous_offers,
+                                                       offers_document))
 
     if errors:
         for error in errors:

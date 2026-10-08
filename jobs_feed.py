@@ -85,7 +85,7 @@ BOARD_FIELDS = ("id", "title", "description", "acceptance", "price_raw",
 
 SECONDS_PER_HOUR = 3600
 
-# The three doors, each stated as it actually works in this repository today.
+# The doors, each stated as it actually works in this repository today.
 # `by_http` carries `deployed: false` on purpose: the README says in as many
 # words that `getunstuck.space` is not live, and a feed whose whole claim is
 # being stranger-checkable cannot open with a URL that does not answer.
@@ -105,6 +105,22 @@ HOW_TO_CLAIM = {
         "where": REPO_URL,
         "needs": "git and Python 3, no account with us, no token",
         "deployed": True,
+    },
+    "by_offer": {
+        "what": ("sell us something we did NOT ask for: open an issue titled "
+                 "exactly `OFFER` with your own scope, your own price and your "
+                 "own deadline"),
+        "where": REPO_URL + "/issues/new",
+        "body": ("one fenced JSON block with the keys agent, output, input, "
+                 "by, price_xno, payout_address and optionally contact. You "
+                 "write the job; we accept it or decline it with a reason code "
+                 "on the public record."),
+        "needs": "a GitHub account, nothing else",
+        "deployed": True,
+        "note": ("The other three doors all take a job_id that already exists "
+                 "on our board, so a seller with their own price list had "
+                 "nowhere to put it. This one is the inbox. See "
+                 "feed/offers.json for what has been offered and decided."),
     },
     "by_http": {
         "what": ("POST /unstuck/api/v1/jobs/<job_id>/claim with "
@@ -483,7 +499,7 @@ def render_html(feed):
             job["acceptance_count"], items)
 
     doors = []
-    for name in ("by_issue", "by_clone", "by_http"):
+    for name in ("by_issue", "by_clone", "by_offer", "by_http"):
         door = feed["how_to_claim"][name]
         extra = ""
         if not door["deployed"]:
