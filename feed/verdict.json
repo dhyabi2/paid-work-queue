@@ -68,7 +68,7 @@
             "state": "open"
           }
         ],
-        "now": "2026-10-08T06:59:30Z"
+        "now": "2026-10-08T08:13:58Z"
       },
       "recipe": "A job is claimable when its `state` is exactly `open` and its `expires` is strictly later than `now`, both read as RFC3339 UTC. The claim is true if at least one job satisfies both. `now` is the artifact's own generated_at, so the verdict is reproducible from this file rather than from your clock.",
       "rule": "at_least_one_open_job_has_not_expired",
@@ -81,7 +81,7 @@
         "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/jobs.json"
       ],
       "claim": "The published feed describes the published board.",
-      "equivalent_command": "python3 jobs_feed.py check --feed feed/jobs.json --jobs jobs.json --now 2026-10-08T06:59:30Z",
+      "equivalent_command": "python3 jobs_feed.py check --feed feed/jobs.json --jobs jobs.json --now 2026-10-08T08:13:58Z",
       "equivalent_command_is_optional": true,
       "falsified_by": "a digest that does not reproduce from the material",
       "id": "jobs-digest-matches",
@@ -352,13 +352,97 @@
       "rule": "the_offer_door_is_published",
       "verdict": true,
       "verdict_is": "measured"
+    },
+    {
+      "check_without_us": [
+        "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/retry_safety.py",
+        "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/tests/test_retry_safety.py"
+      ],
+      "claim": "A new payment can be constructed in exactly one state of the retry-safety state machine, and it is the one state in which no signed block can exist - so no node's answer, 'not found' included, can authorise a second send for a request that already has one.",
+      "equivalent_command": "python3 retry_safety.py table",
+      "equivalent_command_is_optional": true,
+      "falsified_by": "a second row with `blocks_new_send: false`, or a row with `blocks_new_send: false` and `signed_block_can_exist: true`",
+      "id": "no-new-send-while-a-send-may-exist",
+      "inputs": {
+        "inconclusive_observation_kinds": [
+          "not_found",
+          "unconfirmed",
+          "rpc_error",
+          "timeout"
+        ],
+        "new_send_allowed_in": "ABANDONED_NO_SEND",
+        "state_table": [
+          {
+            "blocks_new_send": true,
+            "safe_action": "SIGN_AND_BROADCAST",
+            "signed_block_can_exist": true,
+            "state": "REQUESTED"
+          },
+          {
+            "blocks_new_send": true,
+            "safe_action": "BROADCAST_SAME_BLOCK",
+            "signed_block_can_exist": true,
+            "state": "SIGNED_NOT_BROADCAST"
+          },
+          {
+            "blocks_new_send": true,
+            "safe_action": "REBROADCAST_SAME_BLOCK",
+            "signed_block_can_exist": true,
+            "state": "SENT_UNCONFIRMED"
+          },
+          {
+            "blocks_new_send": true,
+            "safe_action": "WAIT_OR_REBROADCAST_SAME_BLOCK",
+            "signed_block_can_exist": true,
+            "state": "SENT_CONFIRMED_UNRECEIVED"
+          },
+          {
+            "blocks_new_send": true,
+            "safe_action": "FETCH_RESULT",
+            "signed_block_can_exist": true,
+            "state": "SETTLED"
+          },
+          {
+            "blocks_new_send": true,
+            "safe_action": "FETCH_RESULT",
+            "signed_block_can_exist": true,
+            "state": "SETTLED_RESULT_PENDING"
+          },
+          {
+            "blocks_new_send": true,
+            "safe_action": "NOTHING",
+            "signed_block_can_exist": true,
+            "state": "COMPLETE"
+          },
+          {
+            "blocks_new_send": true,
+            "safe_action": "HOLD_FOR_OPERATOR",
+            "signed_block_can_exist": true,
+            "state": "EVIDENCE_UNAVAILABLE"
+          },
+          {
+            "blocks_new_send": false,
+            "safe_action": "SAFE_TO_RETRY_FRESH",
+            "signed_block_can_exist": false,
+            "state": "ABANDONED_NO_SEND"
+          }
+        ],
+        "states_retention_may_drop": [
+          "COMPLETE",
+          "ABANDONED_NO_SEND"
+        ]
+      },
+      "recipe": "`state_table` is the whole state machine, inline above: one row per state, with the single action that state permits and whether it blocks a new send. The claim is true if and only if (a) exactly one row has `blocks_new_send: false`, (b) that row's state is `new_send_allowed_in`, and (c) that row has `signed_block_can_exist: false`. Read the rows and check those three things: nothing is run and nothing is hashed. The listed `inconclusive_observation_kinds` are the node answers - `not_found` among them - that move a counter and never a state, so no number of them reaches the state in (b).",
+      "rule": "exactly_one_state_permits_a_new_send",
+      "verdict": true,
+      "verdict_is": "measured"
     }
   ],
   "claims_asserted": 0,
   "claims_false_or_unproven": 0,
-  "claims_measured": 9,
-  "claims_total": 9,
-  "generated_at": "2026-10-08T06:59:30Z",
+  "claims_measured": 10,
+  "claims_total": 10,
+  "generated_at": "2026-10-08T08:13:58Z",
   "primitives_used": [
     "blake2b-256",
     "blake2b-40",

@@ -79,6 +79,7 @@ sys.path.insert(0, os.path.join(HERE, "vendor"))
 import counterparty_role  # noqa: E402
 import jobs_feed  # noqa: E402
 import order_bound_amount  # noqa: E402
+import retry_safety  # noqa: E402  - for the state table it publishes
 
 TOOL = "verdict"
 V = "verdict-v1"
@@ -289,6 +290,22 @@ def _rule_seller_can_author_the_job(inputs):
             and inputs["offers_feed_published"] is True)
 
 
+def _rule_one_state_permits_a_new_send(inputs):
+    """`ockerclaw`'s property, re-derived from the table the artifact carries.
+
+    Two halves, and both matter. A new send is permitted in exactly one state,
+    and that state is one in which a signed block cannot exist - a table that
+    permitted a fresh send from a state that CAN hold a block would satisfy the
+    first half and still double-pay.
+    """
+    table = inputs["state_table"]
+    permitted = [row["state"] for row in table if not row["blocks_new_send"]]
+    if permitted != [inputs["new_send_allowed_in"]]:
+        return False
+    return all(row["signed_block_can_exist"] is False
+               for row in table if row["state"] in permitted)
+
+
 # rule name -> (function, required input keys)
 RULES = {
     "receipts_list_is_empty": (_rule_receipts_empty, ("receipts",)),
@@ -312,6 +329,9 @@ RULES = {
     "the_offer_door_is_published": (
         _rule_seller_can_author_the_job, ("offer_door", "how_to_claim_keys",
                                           "offers_feed_published")),
+    "exactly_one_state_permits_a_new_send": (
+        _rule_one_state_permits_a_new_send, ("state_table",
+                                             "new_send_allowed_in")),
 }
 
 
@@ -649,6 +669,43 @@ def build(root, *, now):
         falsified_by="feed/jobs.json losing the by_offer door, or "
                      "feed/offers.json not being published",
         equivalent_command="python3 seller_offer.py --self-test"))
+
+    # ---------------------------------------------------------------------
+    # `ockerclaw`, four messages on 2026-10-06 and 2026-10-07: the property,
+    # not the file. They will not run our verifier, so the table goes inline.
+    table = retry_safety.state_table()
+    claims.append(_claim(
+        "no-new-send-while-a-send-may-exist",
+        "A new payment can be constructed in exactly one state of the "
+        "retry-safety state machine, and it is the one state in which no "
+        "signed block can exist - so no node's answer, 'not found' included, "
+        "can authorise a second send for a request that already has one.",
+        _rule_one_state_permits_a_new_send(
+            {"state_table": table,
+             "new_send_allowed_in": retry_safety.ABANDONED_NO_SEND}),
+        "measured",
+        {"state_table": table,
+         "new_send_allowed_in": retry_safety.ABANDONED_NO_SEND,
+         "inconclusive_observation_kinds": list(
+             retry_safety.INCONCLUSIVE_KINDS),
+         "states_retention_may_drop": list(retry_safety.TERMINAL)},
+        "`state_table` is the whole state machine, inline above: one row per "
+        "state, with the single action that state permits and whether it "
+        "blocks a new send. The claim is true if and only if (a) exactly one "
+        "row has `blocks_new_send: false`, (b) that row's state is "
+        "`new_send_allowed_in`, and (c) that row has "
+        "`signed_block_can_exist: false`. Read the rows and check those three "
+        "things: nothing is run and nothing is hashed. The listed "
+        "`inconclusive_observation_kinds` are the node answers - `not_found` "
+        "among them - that move a counter and never a state, so no number of "
+        "them reaches the state in (b).",
+        rule="exactly_one_state_permits_a_new_send",
+        check_without_us=[RAW + "retry_safety.py",
+                          RAW + "tests/test_retry_safety.py"],
+        falsified_by="a second row with `blocks_new_send: false`, or a row "
+                     "with `blocks_new_send: false` and "
+                     "`signed_block_can_exist: true`",
+        equivalent_command="python3 retry_safety.py table"))
 
     measured = [c for c in claims if c["verdict_is"] == "measured"]
     asserted = [c for c in claims if c["verdict_is"] == "asserted"]

@@ -25,6 +25,7 @@ sys.path.insert(0, ROOT)
 sys.path.insert(0, os.path.join(ROOT, "vendor"))
 
 import nanonode  # noqa: E402
+import retry_safety  # noqa: E402
 import settle  # noqa: E402
 
 # Two real, checksum-valid addresses: the Nano genesis account and the burn
@@ -814,3 +815,144 @@ class SettleAnHttpClaim(SettleFixture):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RetrySafetyGateTests(SettleFixture):
+    """Test 14: a second block for one payment is refused, not recorded.
+
+    `ockerclaw`, 2026-10-06T17:36Z: *"A send hash can deduplicate settlement,
+    but it doesn't by itself make payment retries safe: an RPC reporting 'not
+    found' may be lagging, so creating a new send could still double-pay."*
+
+    These are the tests that make `retry_safety.py` more than a file. Without
+    the consult in `settle()` every one of them records a receipt for the
+    SECOND of two possible payments and exits 0.
+
+    The journal is written here with `retry_safety` itself rather than as a
+    hand-built dict, so a change to the journal's shape cannot leave these
+    passing against a shape nothing else writes.
+    """
+
+    OTHER_SEED = "C3D4"
+
+    def journal_with_a_send_in_flight(self, payee=SELLER, amount=PRICE_RAW,
+                                      hash_seed=None, settled=False,
+                                      unsigned=False):
+        now = "2026-09-27T06:00:00Z"
+        journal, attempt = retry_safety.open_attempt(
+            retry_safety.empty_journal(),
+            order_digest="ab" * 32, amount_raw=amount, payee=payee, now=now)
+        key = attempt["idempotency_key"]
+        if unsigned:
+            return journal, key
+        block = {"type": "state", "account": payee, "previous": "b" * 64,
+                 "representative": payee, "balance": "0", "link": "c" * 64,
+                 "link_as_account": payee, "signature": "d" * 128,
+                 "work": "0" * 16, "subtype": "send"}
+        journal, _ = retry_safety.record_signed(
+            journal, key, block, block_hash(hash_seed or self.OTHER_SEED),
+            now=now)
+        journal, _ = retry_safety.record_broadcast(journal, key, now=now)
+        if settled:
+            journal, _ = retry_safety.observe(
+                journal, key, {"kind": "received", "at": now, "node": None},
+                now=now)
+            journal, _ = retry_safety.record_result(
+                journal, key, "https://example.invalid/r", retrievable="YES",
+                now=now)
+        return journal, key
+
+    def write_journal(self, journal):
+        retry_safety.write_journal(
+            os.path.join(self.dir, retry_safety.JOURNAL_FILE), journal)
+
+    # -- 14a ----------------------------------------------------------------
+    def test_14a_a_different_in_flight_send_refuses_and_writes_nothing(self):
+        self.tree([job()])
+        journal, key = self.journal_with_a_send_in_flight()
+        self.write_journal(journal)
+        before = self.all_bytes()
+        code, _out, err = self.settle_ok()
+        self.assertEqual(code, settle.EXIT_SEND_MAY_EXIST)
+        self.assertIn("double-pay", err)
+        self.assertIn(key, err)
+        self.assertIn(block_hash(self.OTHER_SEED), err)
+        self.assertIn("--kind received", err,
+                      "a refusal has to say what the operator does next")
+        self.assertEqual(self.all_bytes(), before)
+        self.assertEqual([n for n in os.listdir(self.dir)
+                          if n.endswith(".tmp")], [])
+
+    # -- 14b ----------------------------------------------------------------
+    def test_14b_the_very_block_being_settled_is_not_a_conflict(self):
+        self.tree([job()])
+        journal, _key = self.journal_with_a_send_in_flight(hash_seed="A1B2")
+        self.write_journal(journal)
+        code, _out, err = self.settle_ok()
+        self.assertEqual(code, 0, err)
+
+    # -- 14c ----------------------------------------------------------------
+    def test_14c_with_no_journal_nothing_changes(self):
+        self.tree([job()])
+        self.assertFalse(os.path.exists(
+            os.path.join(self.dir, retry_safety.JOURNAL_FILE)))
+        code, _out, err = self.settle_ok()
+        self.assertEqual(code, 0, err)
+
+    # -- 14d ----------------------------------------------------------------
+    def test_14d_a_settled_or_unsigned_row_blocks_nothing(self):
+        for label, kwargs in (("settled", {"settled": True}),
+                              ("never signed", {"unsigned": True})):
+            with self.subTest(row=label):
+                self.fresh_dir()
+                self.tree([job()])
+                journal, _key = self.journal_with_a_send_in_flight(**kwargs)
+                self.write_journal(journal)
+                code, _out, err = self.settle_ok()
+                self.assertEqual(code, 0, err)
+
+    # -- 14e ----------------------------------------------------------------
+    def test_14e_an_unreadable_journal_is_a_refusal_not_a_shrug(self):
+        self.tree([job()])
+        path = os.path.join(self.dir, retry_safety.JOURNAL_FILE)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write('{"v": "attempts-v1", "attempts": [')
+        before = self.all_bytes()
+        code, _out, err = self.settle_ok()
+        self.assertEqual(code, settle.EXIT_BAD_JOURNAL)
+        self.assertIn("bad_journal", err)
+        self.assertEqual(self.all_bytes(), before)
+
+    # -- 14f ----------------------------------------------------------------
+    def test_14f_the_payee_is_matched_by_account_not_by_spelling(self):
+        """One account, two spellings. A string compare says two payments."""
+        self.tree([job()])
+        journal, key = self.journal_with_a_send_in_flight(payee=SELLER_XRB)
+        self.write_journal(journal)
+        code, _out, err = self.settle_ok()
+        self.assertEqual(code, settle.EXIT_SEND_MAY_EXIST, err)
+        self.assertIn(key, err)
+
+    # -- 14g ----------------------------------------------------------------
+    def test_14g_another_payment_is_not_this_one(self):
+        for label, kwargs in (("another payee", {"payee": STRANGER}),
+                              ("another amount",
+                               {"amount": str(int(PRICE_RAW) + 1)})):
+            with self.subTest(row=label):
+                self.fresh_dir()
+                self.tree([job()])
+                journal, _key = self.journal_with_a_send_in_flight(**kwargs)
+                self.write_journal(journal)
+                code, _out, err = self.settle_ok()
+                self.assertEqual(code, 0, err)
+
+    # -- 14h ----------------------------------------------------------------
+    def test_14h_a_padded_price_is_the_same_amount(self):
+        """`same_amount`, not a string compare: 0250... is 250... of raw."""
+        self.fresh_dir()
+        self.tree([job(price_raw=PADDED_PRICE_RAW)])
+        journal, key = self.journal_with_a_send_in_flight(amount=PRICE_RAW)
+        self.write_journal(journal)
+        code, _out, err = self.settle_ok()
+        self.assertEqual(code, settle.EXIT_SEND_MAY_EXIST, err)
+        self.assertIn(key, err)

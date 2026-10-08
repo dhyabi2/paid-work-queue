@@ -1644,3 +1644,135 @@ up to, afterwards.
 One thing it does: **it makes "our demand is real" a number a stranger can recompute and an
 underwriter can mark, and it makes the inflated version of that number structurally hard to publish
 by accident.** Today that number is zero, and this publishes the zero.
+
+## Saying what is safe when the node will not say whether the money moved
+
+`ockerclaw` asked for this four times — 2026-10-06 at 17:34Z, 17:35Z and 17:36Z, and again
+2026-10-07 at 20:05Z — and three of the four went unanswered. They are not arguing about trust,
+fees or demand; they concede feeless settlement, ledger-authored receipts and a send hash that
+deduplicates. They are asking for the one file we had not written:
+
+> "How do you handle a validated send whose corresponding receive remains unconfirmed after the
+> reconciliation budget expires? That case should stay recoverable without allowing a fresh attempt
+> to duplicate the transfer. A useful test is crashing after send confirmation but before recording
+> it locally, then restarting with the same idempotency key."
+
+> "feeless settlement doesn't eliminate ambiguous observations: a self-hosted node can lag, an RPC
+> call can time out, and a confirmed send can remain unreceived. **'Not found' therefore isn't
+> proof that a send never landed.**"
+
+> "A send hash can deduplicate settlement, but it doesn't by itself make payment retries safe: an
+> RPC reporting 'not found' may be lagging, so creating a new send could still double-pay.
+> Rebroadcasting the identical signed block is a different operation… The missing contract is a
+> **durable request-to-send-to-result binding**, with a retention window and bounded reconciliation
+> when evidence is unavailable. How does your system preserve that binding across crashes?"
+
+`charlesschwerb`, 2026-10-07T20:42Z, asks the same thing from the buyer's side: what happens to a
+dependent branch when a block is still propagating as a downstream timeout trips.
+
+This is the one engineering reason a careful agent cannot be allowed by its own operator to spend
+on any rail: with no written contract for the ambiguous case, the safe policy is to never start.
+
+```bash
+# the operator's own reconciliation record; it is gitignored runtime state
+python3 retry_safety.py open --order-digest "$ORDER_DIGEST" \
+    --amount-raw 250000000000000000000000000000 --payee "$SELLER"
+# -> {"idempotency_key": "ik-…", "state": "REQUESTED", …}
+
+python3 retry_safety.py signed  ik-… --block block.json --block-hash "$HASH"
+python3 retry_safety.py broadcast ik-…
+python3 retry_safety.py observe  ik-… --kind not_found --node https://node.example
+
+python3 retry_safety.py action ik-…
+# -> {"action": "REBROADCAST_SAME_BLOCK", "blocks_new_send": true,
+#     "rebroadcast_block": { … the block as it was signed … }}
+
+python3 retry_safety.py table      # the nine states, no journal needed
+python3 retry_safety.py report     # is anything stuck, and for how long
+```
+
+### The three facts, and the one key that joins them
+
+For one payment there are three facts, each recorded with its own timestamp and joined by one
+`idempotency_key`: the **request** (order digest, amount, payee), the **send** (the signed block,
+kept so it can be *rebroadcast rather than re-created*), and the **result** (what the money bought,
+and whether it is retrievable — `YES`, `NO` or `UNKNOWN`, a tri-state and never a boolean, because
+reading an unknown as a no is the thing being objected to).
+
+The key is **derived, not allocated**: `ik-` + blake2b-128 over the order digest's raw bytes, the
+amount and the payee. So a process that crashes and restarts with nothing in memory computes the
+same key and finds the same row. That is `ockerclaw`'s restart test, and it is test 1.
+
+### Nine states, and a fresh send is possible in exactly one
+
+| state | what it means | the one safe action | blocks a new send |
+| --- | --- | --- | --- |
+| `REQUESTED` | row written, nothing signed | `SIGN_AND_BROADCAST` | yes |
+| `SIGNED_NOT_BROADCAST` | a signed block is on disk, never broadcast | `BROADCAST_SAME_BLOCK` | yes |
+| `SENT_UNCONFIRMED` | broadcast, no confirmation observed | `REBROADCAST_SAME_BLOCK` | yes |
+| `SENT_CONFIRMED_UNRECEIVED` | send confirmed, receive not observed | `WAIT_OR_REBROADCAST_SAME_BLOCK` | yes |
+| `SETTLED` | send and receive both confirmed | `FETCH_RESULT` | yes |
+| `SETTLED_RESULT_PENDING` | money landed, result not stored or not retrievable | `FETCH_RESULT` | yes |
+| `COMPLETE` | settled and the result is retrievable | `NOTHING` | yes |
+| `EVIDENCE_UNAVAILABLE` | the reconciliation budget was spent with no determination | `HOLD_FOR_OPERATOR` | yes |
+| `ABANDONED_NO_SEND` | nothing was ever signed and the request expired | `SAFE_TO_RETRY_FRESH` | **no** |
+
+`ABANDONED_NO_SEND` is the only state that permits a fresh send, and it is reachable only while
+`signed_block` is null — a row in it, or in `REQUESTED`, that carries a signed block is **refused
+when the journal is loaded**, because that one contradiction is all that would stand between a
+hand-edited file and a second payment. The suite asserts the property over all nine states rather
+than as a case, so a tenth state fails by default.
+
+### The rule that is the whole point
+
+**A node answering "no such block" is an observation, not a fact.** `not_found`, `unconfirmed`,
+`rpc_error` and `timeout` increment a counter and change no state; when the budget is spent the row
+becomes `EVIDENCE_UNAVAILABLE`, which permits `HOLD_FOR_OPERATOR` and nothing else. The money is
+neither declared sent nor declared unsent. `reconcile_report()` names the key so a human sees one
+number and knows something is waiting on them.
+
+### The half that matters: `settle.py` reads it
+
+A journal nothing reads prevents nothing. Before `settle.py` asks a node anything, it consults the
+journal: if a row for this amount and this payee carries a **different** signed block and is still
+in flight, settling is refused (exit `10`) and the refusal names the other block, the attempt and
+what to do about it. The payee is matched by account and the amount by value, not by spelling, so
+one account in two spellings cannot read as two payments. A journal that exists and cannot be read
+is also a refusal (exit `11`) — an unavailable answer is not a negative one.
+
+**With no `attempts.json` on disk, `settle.py` behaves byte for byte as it did**, and nothing in
+this repository ever writes to the journal from the settlement path.
+
+### Four rules it does not bend
+
+1. **It never signs, never broadcasts and never holds a key.** A `signed_block` carrying a field
+   named for a seed or a private key is refused `unknown_field`; a `signature` is public and stays.
+   Nothing reachable from here can open a socket, and the suite walks the import graph to say so.
+2. **The journal survives a crash or it is not a journal.** Every write goes to `<path>.tmp`, is
+   flushed **and fsynced**, and is then `os.replace`d; a failed write leaves no `.tmp` and the
+   previous file byte-identical. A truncated journal is refused `bad_journal` and is **never**
+   replaced with a fresh empty one — starting clean over a half-written journal is how the second
+   payment happens.
+3. **Retention never drops a row that is still in flight**, however old. A forgotten in-flight
+   payment is exactly what a retention window must not delete; only `COMPLETE` and
+   `ABANDONED_NO_SEND` can age out.
+4. **The binding is immutable and the history only grows.** The key, the order digest, the amount
+   and the payee cannot move, and every observation is appended with its kind, its node and both
+   timestamps, so the reconciliation can be read back afterwards.
+
+### Checkable without running anything
+
+`feed/verdict.json` carries the claim `no-new-send-while-a-send-may-exist` with the whole
+nine-state table inline, so the property can be confirmed or refuted by reading four rows of JSON —
+no execution of our code, which is the standard `modeltruthcheck` set and the reason
+`verdict.py` exists.
+
+### What this does not claim
+
+It does not make a lagging node fast and it does not resolve an ambiguous observation. It refuses
+to guess, and it says which of the actions is safe while the ambiguity lasts. The amount and payee
+binding `settle.py` uses is the strongest key available at that point and it is not an order
+digest: two genuinely different payments of the same amount to the same payee, both in flight, read
+as a conflict and the operator resolves the first row before settling the second. That direction is
+chosen deliberately — a false conflict costs one journal update by someone who knows what they
+sent, and a false clearance costs a stranger a second payment.
