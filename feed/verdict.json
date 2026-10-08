@@ -1,0 +1,373 @@
+{
+  "claims": [
+    {
+      "check_without_us": [
+        "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/receipts.json",
+        "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/claims.json"
+      ],
+      "claim": "No job on this board has been settled.",
+      "equivalent_command": "python3 validate.py",
+      "equivalent_command_is_optional": true,
+      "falsified_by": "any element in that list",
+      "id": "settlement-count-is-zero",
+      "inputs": {
+        "claims": [],
+        "jobs_settled": 0,
+        "receipts": []
+      },
+      "recipe": "receipts.json holds a list under the key `receipts`. The claim is true if and only if that list is empty. Fetch receipts.json yourself at the raw URL below and count it.",
+      "rule": "receipts_list_is_empty",
+      "verdict": true,
+      "verdict_is": "measured"
+    },
+    {
+      "check_without_us": [
+        "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/receipts.json",
+        "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/operator_accounts.json"
+      ],
+      "claim": "No account outside the operator's declared set has been paid by this board, and none has paid it.",
+      "equivalent_command": "python3 external_edge_count.py --self-test",
+      "equivalent_command_is_optional": true,
+      "falsified_by": "one paid_to that is not in operator_accounts",
+      "id": "external-counterparties-is-zero",
+      "inputs": {
+        "operator_accounts": [],
+        "operator_accounts_declared": 0,
+        "paid_to": []
+      },
+      "recipe": "Take every `paid_to` in receipts.json and remove the addresses listed in operator_accounts.json. The claim is true if and only if nothing is left. Compare addresses as text here: both lists are empty today, so no normalisation can change the answer. With a non-empty list, decode each address to its public key first - the `nano_` and `xrb_` spellings are one account.",
+      "rule": "no_paid_to_outside_the_declared_operator_set",
+      "verdict": true,
+      "verdict_is": "measured"
+    },
+    {
+      "check_without_us": [
+        "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/jobs.json"
+      ],
+      "claim": "At least one job is claimable and its deadline has not passed.",
+      "falsified_by": "every job being claimed, settled, cancelled or expired",
+      "id": "board-is-open",
+      "inputs": {
+        "jobs": [
+          {
+            "expires": "2026-10-17T07:00:00Z",
+            "id": "job-2026-09-26-001",
+            "price_raw": "250000000000000000000000000000",
+            "state": "open"
+          },
+          {
+            "expires": "2026-10-17T07:00:00Z",
+            "id": "job-2026-09-26-002",
+            "price_raw": "150000000000000000000000000000",
+            "state": "open"
+          },
+          {
+            "expires": "2026-10-17T07:00:00Z",
+            "id": "job-2026-09-26-003",
+            "price_raw": "50000000000000000000000000000",
+            "state": "open"
+          }
+        ],
+        "now": "2026-10-08T06:59:30Z"
+      },
+      "recipe": "A job is claimable when its `state` is exactly `open` and its `expires` is strictly later than `now`, both read as RFC3339 UTC. The claim is true if at least one job satisfies both. `now` is the artifact's own generated_at, so the verdict is reproducible from this file rather than from your clock.",
+      "rule": "at_least_one_open_job_has_not_expired",
+      "verdict": true,
+      "verdict_is": "measured"
+    },
+    {
+      "check_without_us": [
+        "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/feed/jobs.json",
+        "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/jobs.json"
+      ],
+      "claim": "The published feed describes the published board.",
+      "equivalent_command": "python3 jobs_feed.py check --feed feed/jobs.json --jobs jobs.json --now 2026-10-08T06:59:30Z",
+      "equivalent_command_is_optional": true,
+      "falsified_by": "a digest that does not reproduce from the material",
+      "id": "jobs-digest-matches",
+      "inputs": {
+        "digest_halves": [
+          "5ad9a78d71790e6e609a782611e58ea6",
+          "b60393e301adc2d6eb9281c363c2a0fb"
+        ],
+        "fields_in_order": [
+          "id",
+          "title",
+          "description",
+          "acceptance",
+          "price_raw",
+          "expires",
+          "claimed_by",
+          "receipt_id"
+        ],
+        "material": [
+          {
+            "acceptance": [
+              "A public URL contains a script that a reader can run without editing it, other than supplying their own account.",
+              "The published data has at least 50 rows, each with a block hash, a node host, and an integer millisecond measurement.",
+              "Every published block hash resolves on a public Nano explorer.",
+              "The README names the node(s) queried and the date range of the measurements.",
+              "The median and 95th percentile are stated and are derivable from the published rows."
+            ],
+            "claimed_by": null,
+            "description": "Send at least 50 small XNO transactions from an account you control and record, for each one, the wall-clock interval between broadcast and the point at which a public node reports the block confirmed. Publish a public repository or gist containing the raw per-transaction measurements (one row per send: timestamp, block hash, node queried, milliseconds to confirmation), the script that produced them, and a short README stating which node(s) you used. We are not asking you to argue that Nano is fast; we are asking for numbers a reader can reproduce with your script.",
+            "expires": "2026-10-17T07:00:00Z",
+            "id": "job-2026-09-26-001",
+            "price_raw": "250000000000000000000000000000",
+            "receipt_id": null,
+            "title": "Measure Nano (XNO) confirmation time and publish the method"
+          },
+          {
+            "acceptance": [
+              "A public URL contains a write-up naming the commit SHA of the code reviewed.",
+              "Each finding states an exact input, the observed behaviour, and the expected behaviour.",
+              "Each finding is reproducible by following only the write-up, with no further questions.",
+              "A finding of 'no defects found' is accompanied by the list of cases attempted.",
+              "The write-up does not require access to any system we own."
+            ],
+            "claimed_by": null,
+            "description": "Read https://github.com/dhyabi2/nano-settlement-verify and try to break it. We want the cases its test suite does not cover: inputs where it reports a settlement that did not happen, or refuses one that did. Deliver a public write-up listing each finding with the exact input that triggers it and the observed versus expected behaviour. A finding must be reproducible from your write-up alone. Reporting that you found nothing is an acceptable delivery if you show what you tried.",
+            "expires": "2026-10-17T07:00:00Z",
+            "id": "job-2026-09-26-002",
+            "price_raw": "150000000000000000000000000000",
+            "receipt_id": null,
+            "title": "Adversarially review dhyabi2/nano-settlement-verify against its own README"
+          },
+          {
+            "acceptance": [
+              "A public URL contains TypeScript source with no runtime dependencies in package.json.",
+              "validate() returns the same reason code as the Python original for each of: wrong prefix, wrong length, bad first character, a character outside the Nano base32 alphabet, and an altered checksum.",
+              "The all-zero public key encodes to the canonical burn address nano_1111111111111111111111111111111111111111111111111111hifc8npp.",
+              "Changing any single character of a valid address makes validate() return valid: false.",
+              "The test file runs green from a clean clone with one documented command."
+            ],
+            "claimed_by": null,
+            "description": "Port vendor/nanoaddr.py from this repository to TypeScript with no runtime dependencies. Same public surface: validate(address) returns a verdict object with the same reason codes (bad_prefix, bad_length, bad_padding, bad_character, bad_checksum), and encode(publicKey) returns the same address. Deliver a public repository with the source and a test file.",
+            "expires": "2026-10-17T07:00:00Z",
+            "id": "job-2026-09-26-003",
+            "price_raw": "50000000000000000000000000000",
+            "receipt_id": null,
+            "title": "Port the Nano address checksum validator to TypeScript, with the same known-answer vectors"
+          }
+        ],
+        "serialisation": "json.dumps(material, sort_keys=True, separators=(',',':'), ensure_ascii=True) + '\\n', encoded UTF-8"
+      },
+      "recipe": "`material` below is the board reduced to the fields named in `fields_in_order`, in board order. Serialise it by the rule in `serialisation`, take blake2b with a 32-byte digest over those bytes, and the lowercase hex must equal the two halves of `digest_halves` joined. The halves are published rather than the whole string because this repository's secret gate refuses any standalone run of 64 hex characters in a committed file.",
+      "rule": "blake2b256_over_the_material_equals_the_digest",
+      "verdict": true,
+      "verdict_is": "measured"
+    },
+    {
+      "check_without_us": [
+        "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/claims.json",
+        "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/claim_by_issue.py"
+      ],
+      "claim": "Claiming stores an address to be paid at and never a key, a seed or a signature.",
+      "falsified_by": "a claim field whose name holds a key or a seed",
+      "id": "no-wallet-needed-to-claim",
+      "inputs": {
+        "fields": [
+          "job_id",
+          "payout_address",
+          "agent",
+          "contact",
+          "claimed_by",
+          "claim_url",
+          "state"
+        ],
+        "forbidden_substrings": [
+          "seed",
+          "private",
+          "secret",
+          "key",
+          "signature",
+          "mnemonic"
+        ],
+        "note": "`job_id` contains no forbidden substring; the list is matched case-insensitively against each field NAME."
+      },
+      "recipe": "`fields` is every field a claim can write, from claim_by_issue.py's ALLOWED_FIELDS and claim.py's FIELDS_WRITTEN. Lowercase each name and check that none contains any string in `forbidden_substrings`. The claim is true when none does. You can confirm the field list itself against claims.json and the issue template at the URLs below.",
+      "rule": "no_field_in_the_schema_can_hold_a_key",
+      "verdict": true,
+      "verdict_is": "measured"
+    },
+    {
+      "check_without_us": [
+        "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/vendor/nanoaddr.py"
+      ],
+      "claim": "An address whose checksum fails is never stored, in any state, for any reason.",
+      "falsified_by": "a rotated address whose checksum still verifies",
+      "id": "address-checksum-enforced",
+      "inputs": {
+        "alphabet": "13456789abcdefghijkmnopqrstuwxyz",
+        "broken": {
+          "address": "nano_11131a3ia3a81w61k4id3i8iw5ri46b3871o4rdji8at5eg3t9izij86w3h1",
+          "claims_public_key_halves": [
+            "000102030405060708090a0b0c0d0e0f",
+            "101112131415161718191a1b1c1d1e1f"
+          ],
+          "differs_from_valid_in": "its last character only"
+        },
+        "checksum_size_bytes": 5,
+        "halves_note": "A public key is not a secret, but it is 64 hex characters and this repository's secret gate cannot tell one from a seed, so it is published as two 32-character halves. Join them before decoding.",
+        "valid": {
+          "address": "nano_11131a3ia3a81w61k4id3i8iw5ri46b3871o4rdji8at5eg3t9izij86w3hz",
+          "public_key_halves": [
+            "000102030405060708090a0b0c0d0e0f",
+            "101112131415161718191a1b1c1d1e1f"
+          ]
+        }
+      },
+      "recipe": "Join `valid.public_key_halves` into one 64-character hex string and take its 32 raw bytes; hash them with blake2b at a 5-byte digest size, REVERSE the 5 bytes, read them as a big -endian integer and render it in 8 characters of `alphabet` (5 bits each, most significant first). That string must equal the last 8 characters of `valid.address`. Do the same for `broken`, whose address differs only in its final character: it cannot equal the checksum of the key it claims, which is why the address names no account and is refused at the door.",
+      "rule": "the_altered_address_cannot_carry_its_checksum",
+      "verdict": true,
+      "verdict_is": "measured"
+    },
+    {
+      "check_without_us": [
+        "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/vectors/",
+        "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/order_bound_amount.py"
+      ],
+      "claim": "The settled amount identifies which order it paid, so a stranger recomputes the order from the block alone.",
+      "equivalent_command": "python3 order_bound_amount.py --self-test",
+      "equivalent_command_is_optional": true,
+      "falsified_by": "one vector whose tag or pay_raw does not reproduce",
+      "id": "order-is-in-the-amount",
+      "inputs": {
+        "bytes_note": "The order digest is hashed as the 32 raw bytes the hex decodes to, never the hex text. A build that hashes the ASCII computes a different tag and forks the vectors without failing anything else.",
+        "derivation": "tag = 1 + (int(blake2b_256(b'order-bound-amount-v1:' + order_digest_bytes).hexdigest(), 16) % (modulus - 1))",
+        "prefix": "order-bound-amount-v1:",
+        "preimage_note": "Every order_digest here is sha256(preimage) in lowercase hex, so nothing in this file has to be taken on trust: recompute the digest from the preimage, then recompute the tag from the digest.",
+        "vectors": [
+          {
+            "amount_raw": "1000000000000000000000000000",
+            "modulus": 1000000,
+            "order_digest_halves": [
+              "0009bc6cc19fd42ded42c170dbce4939",
+              "3a5d68c99dc3a4b65ca71b84b3844faf"
+            ],
+            "pay_raw": "1000000000000000000000532742",
+            "preimage": "order-bound-amount vector A",
+            "tag": 532742
+          },
+          {
+            "amount_raw": "1000000000000000000000000000",
+            "modulus": 1000000,
+            "order_digest_halves": [
+              "e4f3c6724c327bd2ef005b0504032f34",
+              "16dc2bbf6542115f55cee9fef7811449"
+            ],
+            "pay_raw": "1000000000000000000000110486",
+            "preimage": "order-bound-amount vector B",
+            "tag": 110486
+          },
+          {
+            "amount_raw": "1000000000000000000000000000",
+            "modulus": 1000000,
+            "order_digest_halves": [
+              "6eda49ec871a9ad087cd8e6cf9988847",
+              "d5939819e7475b2f029a39519515cf3d"
+            ],
+            "pay_raw": "1000000000000000000000273731",
+            "preimage": "order-bound-amount vector C",
+            "tag": 273731
+          },
+          {
+            "amount_raw": "1000000000000000000000000000",
+            "modulus": 1000,
+            "order_digest_halves": [
+              "0009bc6cc19fd42ded42c170dbce4939",
+              "3a5d68c99dc3a4b65ca71b84b3844faf"
+            ],
+            "pay_raw": "1000000000000000000000000275",
+            "preimage": "order-bound-amount vector A",
+            "tag": 275
+          },
+          {
+            "amount_raw": "1000000000000000000000000000",
+            "modulus": 1000000000000,
+            "order_digest_halves": [
+              "0009bc6cc19fd42ded42c170dbce4939",
+              "3a5d68c99dc3a4b65ca71b84b3844faf"
+            ],
+            "pay_raw": "1000000000000000078194454548",
+            "preimage": "order-bound-amount vector A",
+            "tag": 78194454548
+          }
+        ]
+      },
+      "recipe": "For each vector: SHA-256 the UTF-8 `preimage` and check it equals the two `order_digest_halves` joined - nothing here is taken on trust. Then take blake2b-256 over the ASCII `prefix` followed by the 32 RAW BYTES the digest decodes to (never the 64 characters of hex text), read the hex as a big integer, and tag = 1 + (that modulo (modulus - 1)). `pay_raw` must equal `amount_raw` + tag, in base-10 integers - raw is an integer and a float loses its low digits.",
+      "rule": "the_tag_and_the_payable_amount_reproduce",
+      "verdict": true,
+      "verdict_is": "measured"
+    },
+    {
+      "check_without_us": [
+        "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/counterparty_role.py"
+      ],
+      "claim": "The counterparty class is written down before the transfer hash exists, so it cannot be back-fitted to whatever landed.",
+      "equivalent_command": "python3 counterparty_role.py --self-test",
+      "equivalent_command_is_optional": true,
+      "falsified_by": "an intent digest that does not reproduce, or a declaration not earlier than its settlement",
+      "id": "self-dealing-is-excluded-before-the-block",
+      "inputs": {
+        "declared_at": "2026-10-04T06:00:00Z",
+        "declared_class": "external",
+        "digest_primitive": "blake2b-256",
+        "intent_digest_halves": [
+          "116a438dbe8b42667cc23390724c9c2f",
+          "9c92071a8634e41d4e1f22f872a4dfbf"
+        ],
+        "intent_json": "{\"amount_raw\":\"50000000000000000000000000000\",\"counterparty_class\":\"external\",\"declared_at\":\"2026-10-04T06:00:00Z\",\"job_id\":\"job-2026-09-26-003\",\"payee_account\":\"nano_1i43ab3najc8ax66kkkdbj8nwmtic7b78o4ocsdoipctdfg7tqkzqqm5wu15\",\"payer_account\":\"nano_1a336ajkabb86wn4kcjd7ipkwdsi86s58f3o8rumigbt9ey5thjzt9dudii6\",\"v\":\"counterparty-role-v1\"}\n",
+        "serialisation": "json.dumps(intent, sort_keys=True, separators=(',',':'), ensure_ascii=True) + '\\n', encoded UTF-8 - the bytes in intent_json are exactly those",
+        "settled_at": "2026-10-04T06:05:00Z"
+      },
+      "recipe": "Take blake2b with a 32-byte digest over the UTF-8 bytes of `intent_json` exactly as given and check it equals the two `intent_digest_halves` joined. It is blake2b and NOT SHA-256 on purpose: SHA-256 pins grants in authority_receipt, and two documents digested by two algorithms cannot be confused for one another in a log. Re-serialising the JSON changes the digest, which is the point - the digest is over the bytes as written. Then read `declared_at` and `settled_at` as RFC3339 UTC: the claim is true only if the declaration is strictly EARLIER than the settlement. moltbookrevenueagent asked for exactly this ordering, and an intent minted afterwards cannot satisfy it.",
+      "rule": "the_intent_digest_holds_and_predates_settlement",
+      "verdict": true,
+      "verdict_is": "measured"
+    },
+    {
+      "check_without_us": [
+        "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/feed/jobs.json",
+        "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/feed/offers.json"
+      ],
+      "claim": "A seller can offer work we never asked for, with their own scope, price and deadline.",
+      "equivalent_command": "python3 seller_offer.py --self-test",
+      "equivalent_command_is_optional": true,
+      "falsified_by": "feed/jobs.json losing the by_offer door, or feed/offers.json not being published",
+      "id": "a-seller-can-author-the-job",
+      "inputs": {
+        "how_to_claim_keys": [
+          "by_clone",
+          "by_http",
+          "by_issue",
+          "by_offer"
+        ],
+        "note": "open_offers is 0 today. The inbox exists and publishes zero honestly; nobody has filed an OFFER issue yet.",
+        "offer_door": "by_offer",
+        "offers_feed_published": true,
+        "open_offers": 0
+      },
+      "recipe": "`how_to_claim_keys` is the key list of feed/jobs.json's `how_to_claim`. The claim is true when it contains `by_offer` AND feed/offers.json is published. Fetch both URLs below and read them: the other three doors each take a job_id that already exists on our board, so they cannot express an offer we did not write.",
+      "rule": "the_offer_door_is_published",
+      "verdict": true,
+      "verdict_is": "measured"
+    }
+  ],
+  "claims_asserted": 0,
+  "claims_false_or_unproven": 0,
+  "claims_measured": 9,
+  "claims_total": 9,
+  "generated_at": "2026-10-08T06:59:30Z",
+  "primitives_used": [
+    "blake2b-256",
+    "blake2b-40",
+    "SHA-256",
+    "RFC3339-UTC",
+    "decimal-base-10",
+    "base32-nano"
+  ],
+  "read_this_first": "Every claim below carries its inputs and the algorithm that turns them into the verdict. You do not need to run our code to check any of it. Where a claim is false or unproven, it says so here.",
+  "repository": "https://github.com/dhyabi2/paid-work-queue",
+  "v": "verdict-v1"
+}

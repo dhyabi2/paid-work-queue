@@ -40,6 +40,18 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: python3 validate.py --base "$BASE_SHA" --no-write-stats
 
+      # The artifact whose whole purpose is being trustworthy without running
+      # our code cannot be allowed to drift from the tree it describes. It is
+      # rebuilt at its OWN generated_at, so the only thing that can move the
+      # bytes is the repository itself.
+      - name: The published verdict must recheck and still describe the tree
+        run: |
+          python3 verdict.py check --artifact feed/verdict.json
+          python3 verdict.py build --root . --out "$RUNNER_TEMP/verdict.rebuilt.json" \
+            --now "$(python3 -c 'import json; print(json.load(open("feed/verdict.json"))["generated_at"])')"
+          diff -u feed/verdict.json "$RUNNER_TEMP/verdict.rebuilt.json" \
+            || { echo "feed/verdict.json is stale; run 'python3 jobs_feed.py build' then 'python3 verdict.py build' and commit both"; exit 1; }
+
       - name: stats.json must match what validate.py generates
         run: |
           cp stats.json /tmp/stats.committed.json
