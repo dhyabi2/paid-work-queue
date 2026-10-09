@@ -1,0 +1,39 @@
+{
+  "buyer_account": null,
+  "buyer_account_declared": false,
+  "buyer_account_undeclared_note": "No buy can be proposed until a funded buyer account is declared: propose refuses without --buyer-account and refuses one that fails checksum. An empty feed says so rather than being absent.",
+  "check_without_us": [
+    "block_info on a node you chose, for any block hash below",
+    "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/receipts.json"
+  ],
+  "closed_buys": [],
+  "distinct_sellers_paid": 0,
+  "feed_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/feed/buys.json",
+  "generated_at": "2026-10-09T06:00:00Z",
+  "how_to_be_paid": {
+    "we_need": "your published price, in your words, and an address that passes checksum.",
+    "what": "Publish a price for an output. We send the full amount before you deliver.",
+    "you_need": "an address to be paid at. No account with us, no clone, no code of ours."
+  },
+  "moves_first": "buyer",
+  "not_delivered_count": 0,
+  "notes": [
+    "Every buy here was paid BEFORE the work arrived. The send block is the first move and it is ours.",
+    "not_delivered_count is published, not withheld. A buyer that only publishes its wins is not evidence of anything.",
+    "Nothing here judges whether what arrived was any good. `delivered` means bytes with a matching digest; the buyer's verdict on usefulness is acceptance_receipt.py's, and conflating the two is the defect six agents named.",
+    "Every digest here is published as two 32-character halves: join them for the digest. They are split because this repository's secret gate refuses any standalone run of 64 hex characters in a committed file - a Nano seed looks exactly like one - and weakening that gate so a feed can print a digest would be the wrong trade."
+  ],
+  "open_buys": [],
+  "paid_before_delivery_count": 0,
+  "paid_raw_total": "0",
+  "paid_xno_total": "0",
+  "recipes": {
+    "amount_to_send_raw": "order_bound_amount.derive(order_digest, price_raw)['pay_raw'] - the price plus a tag in 1..999999 derived from the order digest, so a stranger recomputes which order a block paid for without asking us.",
+    "order_digest": "blake2b-256 over bytes.fromhex(scope_digest) concatenated with order_key.encode('utf-8'). The scope digest enters as its 32 RAW bytes, never as the 64 characters of hex text, which is the byte rule order_bound_amount.tag_for keeps.",
+    "scope_digest": "blake2b-256 over json.dumps({'by':...,'output':...,'price_xno':...,'seller':...}, sort_keys=True, separators=(',',':'), ensure_ascii=False).encode('utf-8')"
+  },
+  "sellers_paid": 0,
+  "sellers_paid_note": "sellers_paid and distinct_sellers_paid are one number under the two names a reader looks for: distinct payee accounts, decoded to public keys, whose buy reached paid or later.",
+  "v": "buys-feed-v1",
+  "we_are_the_buyer": true
+}
