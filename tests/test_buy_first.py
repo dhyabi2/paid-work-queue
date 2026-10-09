@@ -550,7 +550,8 @@ class Discipline(unittest.TestCase):
         for module in ("socket", "http", "urllib", "ssl", "requests",
                        "asyncio", "ftplib", "telnetlib", "smtplib"):
             self.assertNotIn(module, reached)
-        source = open(os.path.join(ROOT, "buy_first.py"), encoding="utf-8").read()
+        with open(os.path.join(ROOT, "buy_first.py"), encoding="utf-8") as handle:
+            source = handle.read()
         for name in ("http.client", "urllib.request", "socket(", "ssl."):
             self.assertNotIn(name, source)
 
