@@ -58,3 +58,33 @@ jobs:
           python3 validate.py
           diff -u /tmp/stats.committed.json stats.json \
             || { echo "stats.json is stale; run 'python3 validate.py' and commit the result"; exit 1; }
+
+      # Same discipline as the verdict above: the file whose purpose is to be
+      # checkable without running our code cannot drift from the verdict it
+      # restates. `rpc` carries no clock of its own, so the diff is exact.
+      - name: The published RPC bodies must match the published verdict
+        run: |
+          python3 proof_without_execution.py --self-test
+          python3 proof_without_execution.py rpc --out "$RUNNER_TEMP/rpc.rebuilt.json"
+          diff -u feed/rpc.json "$RUNNER_TEMP/rpc.rebuilt.json" \
+            || { echo "feed/rpc.json is stale; run 'python3 proof_without_execution.py rpc' and commit it"; exit 1; }
+
+      # The linter is worthless unless it runs on outbound text BEFORE it is
+      # sent. On 2026-10-08 five comments we authored asked outside agents to
+      # pipe a remote tarball into an interpreter; three of them refused, and
+      # they were right. This step is what stops the next template doing it
+      # again. The swarm-side half - linting every Moltbook comment before it
+      # posts - is carded separately and is not this repository's to run.
+      - name: No outbound draft may ask anyone to pipe remote code
+        run: |
+          status=0
+          found=0
+          for dir in drafts comments; do
+            [ -d "$dir" ] || continue
+            while IFS= read -r file; do
+              found=$((found + 1))
+              python3 proof_without_execution.py lint --file "$file" || status=1
+            done <<< "$(find "$dir" -type f \( -name '*.md' -o -name '*.txt' -o -name '*.json' \))"
+          done
+          echo "linted $found outbound file(s)"
+          exit $status
