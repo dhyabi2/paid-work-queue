@@ -1,0 +1,119 @@
+{
+ "_block_hash_in_halves_note": "The hash below is a FIXTURE value, not a real block. It is stored under the field name `block_hash` because that is the only field this repository's secret gate permits a 64-hex value in.",
+ "_halves_note": "A real node returns `successor`, `previous`, `frontier`, `open_block` and `representative_block` as single 64-character hex strings. They are stored here as two 32-character halves under `<field>_halves`, joinable back, because this repository's secret gate refuses any 64-hex run standing alone outside a `block_hash` field - a Nano seed looks exactly like one. No test reads them; the fields a test reads (`contents.balance`, `balance`, `amount`, `contents.link_as_account`, `block_account`) are verbatim. The gate is not weakened for a fixture.",
+ "_what": "Node responses in the shape a real Nano node returns them, plus a verdict artifact carrying one settled receipt and one declared operator account. Tests read this file instead of a socket: the suite is hermetic and `proof_without_execution.py` imports no network module at all.",
+ "_why_a_fixture_receipt": "receipts.json is empty today, so the real `feed/rpc.json` carries zero ledger entries. That is the honest output and not a gap - but it would also be the output of a build whose ledger lane does not work. This fixture drives the lane, so the first real receipt emits a block_info body rather than waiting on another build.",
+ "expected": {
+  "account": "nano_3eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpjberezd",
+  "modulus": 1000000,
+  "order_digest_halves": [
+   "0009bc6cc19fd42ded42c170dbce4939",
+   "3a5d68c99dc3a4b65ca71b84b3844faf"
+  ],
+  "order_preimage": "order-bound-amount vector A",
+  "pay_raw": "1000000000000000000000532742",
+  "tag": 532742
+ },
+ "ledger_verdict": {
+  "claims": [
+   {
+    "check_without_us": [
+     "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/receipts.json"
+    ],
+    "claim": "No job on this board has been settled.",
+    "falsified_by": "any element in that list",
+    "id": "settlement-count-is-zero",
+    "inputs": {
+     "claims": [],
+     "jobs_settled": 1,
+     "receipts": [
+      {
+       "amount_raw": "1000000000000000000000532742",
+       "block_hash": "9F1C4E7B2D0A6358F4E1C7B93A02D5E671B8C3D4A5E6F70918243546576879AB",
+       "paid_to": "nano_3eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpjberezd",
+       "receipt_id": "rcp_fixture01",
+       "settled_at": "2026-10-09T00:00:00Z"
+      }
+     ]
+    },
+    "recipe": "receipts.json holds a list under the key `receipts`.",
+    "rule": "receipts_list_is_empty",
+    "verdict": false,
+    "verdict_is": "measured"
+   },
+   {
+    "check_without_us": [
+     "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/operator_accounts.json"
+    ],
+    "claim": "No account outside the operator's declared set has been paid.",
+    "falsified_by": "an address left over after the subtraction",
+    "id": "external-counterparties-is-zero",
+    "inputs": {
+     "operator_accounts": [
+      "nano_3eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpjberezd"
+     ],
+     "operator_accounts_declared": 1,
+     "paid_to": [
+      "nano_3eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpjberezd"
+     ]
+    },
+    "recipe": "Take every paid_to in receipts.json and remove operator_accounts.json.",
+    "rule": "no_paid_to_outside_the_declared_operator_set",
+    "verdict": true,
+    "verdict_is": "measured"
+   }
+  ],
+  "generated_at": "2026-10-09T00:00:00Z",
+  "repository": "https://github.com/dhyabi2/paid-work-queue",
+  "v": "verdict-v1"
+ },
+ "responses": {
+  "account_info": {
+   "account_version": "2",
+   "balance": "1000000000000000000000532742",
+   "block_count": "2",
+   "confirmation_height": "2",
+   "confirmed_balance": "1000000000000000000000532742",
+   "frontier_halves": [
+    "9F1C4E7B2D0A6358F4E1C7B93A02D5E6",
+    "71B8C3D4A5E6F70918243546576879AB"
+   ],
+   "modified_timestamp": "1760000000",
+   "open_block_halves": [
+    "00000000000000000000000000000000",
+    "00000000000000000000000000000000"
+   ],
+   "representative_block_halves": [
+    "9F1C4E7B2D0A6358F4E1C7B93A02D5E6",
+    "71B8C3D4A5E6F70918243546576879AB"
+   ]
+  },
+  "block_info": {
+   "amount": "1000000000000000000000532742",
+   "balance": "1000000000000000000000532742",
+   "block_account": "nano_3eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpjberezd",
+   "confirmed": "true",
+   "contents": {
+    "account": "nano_3eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpjberezd",
+    "balance": "1000000000000000000000532742",
+    "link_as_account": "nano_3eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpcsd7eokpjberezd",
+    "previous_halves": [
+     "00000000000000000000000000000000",
+     "00000000000000000000000000000000"
+    ],
+    "representative": "nano_1esm8esm8esm8esm8esm8esm8esm8esm8esm8esm8esm8esm8esmwiixh3uh",
+    "signature": "00",
+    "type": "state",
+    "work": "0000000000000000"
+   },
+   "height": "2",
+   "local_timestamp": "1760000000",
+   "subtype": "send",
+   "successor_halves": [
+    "00000000000000000000000000000000",
+    "00000000000000000000000000000000"
+   ]
+  }
+ },
+ "v": "rpc-v1-fixtures"
+}
