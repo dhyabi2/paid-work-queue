@@ -631,8 +631,8 @@ class NothingOfOursDecides(unittest.TestCase):
         expected = {
             "tool", "version", "expect", "quorum_required", "nodes_total",
             "agreeing", "dissenting", "unusable", "excluded", "per_node",
-            "split", "vendor_endpoints_present", "confirmed_independently",
-            "reasons", "notes",
+            "split", "vendor_endpoints_present", "duplicate_hosts_present",
+            "confirmed_independently", "reasons", "notes",
         }
         self.assertEqual(set(decide(expectation(), agreeing(3), quorum=3)),
                          expected)
@@ -679,6 +679,123 @@ class NothingOfOursDecides(unittest.TestCase):
             source = handle.read()
         head = source.split("def urllib_transport")[0]
         self.assertNotIn("import urllib.request", head)
+
+class OneNodeIsNotAQuorum(unittest.TestCase):
+    """A host that votes twice is one instrument, and one instrument is zero.
+
+    Quorum counted responses, not nodes, so an operator who passed the same
+    endpoint three times - by copy-paste, or by naming one host three ways -
+    got `confirmed_independently: true` with an empty `reasons`. This module's
+    stated doctrine is that "one instrument is zero"; the count has to agree
+    with it.
+    """
+
+    ONE = "https://one.example.org/"
+
+    def _repeat(self, *endpoints):
+        return [response(endpoint) for endpoint in endpoints]
+
+    # -- the refusal ----------------------------------------------------
+
+    def test_the_same_endpoint_three_times_is_not_a_quorum_of_three(self):
+        verdict = decide(expectation(),
+                         self._repeat(self.ONE, self.ONE, self.ONE), quorum=3)
+        self.assertFalse(verdict["confirmed_independently"])
+        self.assertIn("duplicate_node_in_set", verdict["reasons"])
+
+    def test_three_spellings_of_one_host_are_not_three_nodes(self):
+        for twin in ("https://one.example.org",          # no trailing slash
+                     "HTTPS://ONE.EXAMPLE.ORG/",         # case
+                     "https://one.example.org:7076/",    # a port
+                     "https://one.example.org/rpc"):     # a path
+            verdict = decide(expectation(),
+                             self._repeat(self.ONE, twin, NODES[1]), quorum=3)
+            self.assertFalse(verdict["confirmed_independently"], twin)
+            self.assertIn("duplicate_node_in_set", verdict["reasons"], twin)
+
+    def test_the_repeated_host_is_named_not_just_counted(self):
+        verdict = decide(expectation(),
+                         self._repeat(self.ONE, self.ONE, NODES[1]), quorum=3)
+        self.assertEqual(verdict["duplicate_hosts_present"], ["one.example.org"])
+
+    def test_two_real_nodes_and_one_repeat_still_refuses_at_quorum_two(self):
+        """The repeat must not be able to stand in for a missing node."""
+        verdict = decide(expectation(),
+                         self._repeat(self.ONE, self.ONE), quorum=2)
+        self.assertFalse(verdict["confirmed_independently"])
+
+    def test_an_endpoint_with_no_hostname_still_collides_with_itself(self):
+        verdict = decide(expectation(), self._repeat("not-a-url", "not-a-url",
+                                                     NODES[1]), quorum=3)
+        self.assertFalse(verdict["confirmed_independently"])
+        self.assertIn("duplicate_node_in_set", verdict["reasons"])
+
+    # -- the controls, which must hold either way ------------------------
+
+    def test_three_distinct_hosts_are_still_confirmed(self):
+        verdict = decide(expectation(), agreeing(3), quorum=3)
+        self.assertTrue(verdict["confirmed_independently"], verdict["reasons"])
+        self.assertEqual(verdict["reasons"], [])
+
+    def test_a_sibling_subdomain_is_a_different_host_and_may_vote(self):
+        """Only an identical host collides. Guessing at operators by suffix is
+        how a verifier silences a node nobody asked it to silence."""
+        verdict = decide(
+            expectation(),
+            self._repeat("https://rpc.one.example.org/",
+                         "https://other.one.example.org/", NODES[1]),
+            quorum=3)
+        self.assertTrue(verdict["confirmed_independently"], verdict["reasons"])
+
+    def test_a_host_that_is_merely_unreachable_twice_is_not_a_duplicate(self):
+        """A node that never voted inflated no count, so refusing would cost a
+        good verdict for nothing."""
+        down = response("https://down.example.org/", None, ok=False,
+                        error="timed out")
+        verdict = decide(expectation(), agreeing(3) + [down, down], quorum=3)
+        self.assertTrue(verdict["confirmed_independently"], verdict["reasons"])
+
+    def test_a_vendor_node_repeated_is_still_reported_as_a_vendor_node(self):
+        """An excluded node never votes, so exclusion is the finding, not this."""
+        vendor = response("https://rpc.getunstuck.space/")
+        verdict = decide(expectation(), agreeing(3) + [vendor, vendor], quorum=3)
+        self.assertFalse(verdict["confirmed_independently"])
+        self.assertIn("vendor_node_in_set", verdict["reasons"])
+        self.assertNotIn("duplicate_node_in_set", verdict["reasons"])
+
+    def test_a_split_is_still_reported_as_a_split_as_well(self):
+        """A dissenting duplicate must not hide the disagreement."""
+        dissenter = response(self.ONE, body(amount=RAW_ONE_OFF))
+        verdict = decide(expectation(),
+                         agreeing(3) + [dissenter, dissenter], quorum=3)
+        self.assertFalse(verdict["confirmed_independently"])
+        self.assertIn("nodes_disagree", verdict["reasons"])
+        self.assertIn("duplicate_node_in_set", verdict["reasons"])
+
+    def test_quorum_not_met_is_still_suppressed_by_a_split(self):
+        """Unchanged from before this check existed."""
+        verdict = decide(expectation(),
+                         agreeing(1) + [response(NODES[1],
+                                                 body(amount=RAW_ONE_OFF))],
+                         quorum=3)
+        self.assertIn("nodes_disagree", verdict["reasons"])
+        self.assertNotIn("quorum_not_met", verdict["reasons"])
+
+    # -- the key function itself -----------------------------------------
+
+    def test_voting_host_reads_the_hostname_not_the_url_text(self):
+        host = independent_confirm.voting_host
+        self.assertEqual(host("https://one.example.org/"), "one.example.org")
+        self.assertEqual(host("https://ONE.example.org"), "one.example.org")
+        self.assertEqual(host("https://one.example.org:7076/rpc"),
+                         "one.example.org")
+        self.assertEqual(host("http://one.example.org/"), "one.example.org")
+        self.assertEqual(host("  Not-A-URL "), "not-a-url")
+
+    def test_the_new_reason_is_in_the_closed_table_with_a_control(self):
+        self.assertIn("duplicate_node_in_set", OVERALL_REASONS)
+        self.assertIn("duplicate_node_in_set",
+                      independent_confirm._overall_controls())
 
 
 if __name__ == "__main__":
