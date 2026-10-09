@@ -132,6 +132,7 @@ NODE_REASONS = (
 OVERALL_REASONS = (
     "vendor_node_in_set",
     "nodes_disagree",
+    "duplicate_node_in_set",
     "quorum_not_met",
     "no_usable_node",
 )
@@ -252,6 +253,22 @@ def excluded_endpoint(endpoint, excluded_hosts):
         if host == bad or host.endswith("." + bad):
             return bad
     return None
+
+
+def voting_host(endpoint):
+    """The key two endpoints must differ in to be two instruments.
+
+    The parsed hostname, lowercased - the same basis `excluded_endpoint` uses,
+    and for the same reason: a URL string is not an identity.
+    `https://rpc.example`, `https://rpc.example/` and `HTTPS://RPC.EXAMPLE`
+    are one node under three spellings, and a port is not a second operator.
+
+    An endpoint with no parseable hostname falls back to its stripped,
+    lowercased text, so two identical strings still collide rather than
+    counting twice.
+    """
+    host = (urlsplit(endpoint).hostname or "").lower()
+    return host or str(endpoint).strip().lower()
 
 
 def _excluded_hosts(extra=None):
@@ -425,15 +442,35 @@ def decide(expect, responses, quorum=DEFAULT_QUORUM, excluded_hosts=None):
     unusable = sum(1 for n in per_node if n["verdict"] == "unusable")
     excluded = [n["endpoint"] for n in per_node if n["verdict"] == "excluded"]
 
+    # One node asked three times is one instrument, and this module's whole
+    # claim is that one instrument is zero. Quorum counted responses, so three
+    # copies of one endpoint - or three spellings of one host - met a quorum of
+    # three and printed `confirmed_independently: true` with no reason at all.
+    # The nodes that VOTED are the ones that formed the verdict, so they are
+    # the ones that have to be distinct; a host that is merely down twice
+    # inflates nothing and is not a refusal.
+    voted = [n["endpoint"] for n in per_node
+             if n["verdict"] in ("agree", "disagree")]
+    seen = set()
+    duplicates = []
+    for endpoint in voted:
+        host = voting_host(endpoint)
+        if host in seen and host not in duplicates:
+            duplicates.append(host)
+        seen.add(host)
+
     split = agreeing > 0 and dissenting > 0
-    confirmed = agreeing >= quorum and dissenting == 0 and not excluded
+    confirmed = (agreeing >= quorum and dissenting == 0
+                 and not excluded and not duplicates)
 
     reasons = []
     if excluded:
         reasons.append("vendor_node_in_set")
     if split:
         reasons.append("nodes_disagree")
-    elif agreeing < quorum:
+    if duplicates:
+        reasons.append("duplicate_node_in_set")
+    if not split and agreeing < quorum:
         reasons.append("quorum_not_met")
     if agreeing + dissenting == 0:
         reasons.append("no_usable_node")
@@ -451,6 +488,7 @@ def decide(expect, responses, quorum=DEFAULT_QUORUM, excluded_hosts=None):
         "per_node": per_node,
         "split": split,
         "vendor_endpoints_present": excluded,
+        "duplicate_hosts_present": duplicates,
         "confirmed_independently": confirmed,
         "reasons": reasons,
         "notes": list(NOTES),
@@ -655,6 +693,8 @@ def _overall_controls():
     return {
         "vendor_node_in_set": _agreeing_set(3) + [nodes["vendor_node"]],
         "nodes_disagree": _agreeing_set(3) + [nodes["amount_mismatch"]],
+        "duplicate_node_in_set": _agreeing_set(2) + [
+            _control_response("https://NODE1.example.org", _control_body(payee))],
         "quorum_not_met": _agreeing_set(2),
         "no_usable_node": [nodes["node_unreachable"], nodes["node_malformed"],
                            _control_response("https://node8.example.org/", None,
