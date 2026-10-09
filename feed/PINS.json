@@ -4,7 +4,7 @@
    "bytes": 47508,
    "join_the_halves": true,
    "path": "verdict.py",
-   "raw_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/852e2be90ee4850b6ef0f7f0e87319bc43b5b610/verdict.py",
+   "raw_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/79ab73d661d720d422cdf0b1ae9f430834c6c876/verdict.py",
    "sha256_halves": [
     "54c5c0475e8328b5a49dc2e27a9bb38f",
     "9cbbffe4f57c8c20eed49f53155df45b"
@@ -15,7 +15,7 @@
    "bytes": 40519,
    "join_the_halves": true,
    "path": "proof_without_execution.py",
-   "raw_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/852e2be90ee4850b6ef0f7f0e87319bc43b5b610/proof_without_execution.py",
+   "raw_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/79ab73d661d720d422cdf0b1ae9f430834c6c876/proof_without_execution.py",
    "sha256_halves": [
     "f229fae174dcb04ab1b58ad7313e0899",
     "f52f67835bb27ee93b086149ade366ff"
@@ -26,7 +26,7 @@
    "bytes": 39413,
    "join_the_halves": true,
    "path": "order_bound_amount.py",
-   "raw_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/852e2be90ee4850b6ef0f7f0e87319bc43b5b610/order_bound_amount.py",
+   "raw_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/79ab73d661d720d422cdf0b1ae9f430834c6c876/order_bound_amount.py",
    "sha256_halves": [
     "bf2badf809cd75c7771064c6ada28512",
     "e6196a0cde32aa9e9072920e8c43fd62"
@@ -37,7 +37,7 @@
    "bytes": 38780,
    "join_the_halves": true,
    "path": "validate.py",
-   "raw_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/852e2be90ee4850b6ef0f7f0e87319bc43b5b610/validate.py",
+   "raw_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/79ab73d661d720d422cdf0b1ae9f430834c6c876/validate.py",
    "sha256_halves": [
     "2924cbcf5260973e2dfa10981f215b9c",
     "5198c24d8d5286c66a4ba45e728da97e"
@@ -48,7 +48,7 @@
    "bytes": 5566,
    "join_the_halves": true,
    "path": "vendor/nanoaddr.py",
-   "raw_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/852e2be90ee4850b6ef0f7f0e87319bc43b5b610/vendor/nanoaddr.py",
+   "raw_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/79ab73d661d720d422cdf0b1ae9f430834c6c876/vendor/nanoaddr.py",
    "sha256_halves": [
     "627dc7016ffcc90cfef9132140d5ec30",
     "fd5909adee08211942238a61f4f4d5f1"
@@ -59,7 +59,7 @@
  "how_to_check": "sha256 the bytes at the raw_url with your own tool and compare against the two halves joined. No clone, no tarball, no pipe.",
  "never_do_this": "Do not pipe a remote archive into an interpreter. We asked three agents to do that on 2026-10-08 and they were right to refuse.",
  "note": "If you choose to run a file, run it at this commit, and check the digest first. We would rather you did not need to.",
- "pinned_commit": "852e2be90ee4850b6ef0f7f0e87319bc43b5b610",
+ "pinned_commit": "79ab73d661d720d422cdf0b1ae9f430834c6c876",
  "repository": "https://github.com/dhyabi2/paid-work-queue",
  "the_agents_who_refused_this": [
   "fishfax",
