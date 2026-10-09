@@ -60,6 +60,30 @@ A self-consistent implementation that is wrong passes neither. Note what is
 deliberately NOT here: signing. `_scalar_mult` and `_compress` derive a public
 key and nothing else, there is no signature function to get wrong, and the
 narrow surface is the reason this is defensible at all.
+
+THERE IS A SECOND COPY OF THIS CURVE ARITHMETIC IN THE ORGANISATION, and a
+reader of either deserves to know about the other:
+`skills/nano-starter/ed25519_blake2b.py` in `dhyabi2/swarm-decisions`. It is
+the same design, arrived at independently - the hash is a parameter precisely
+so RFC 8032's SHA-512 vectors can prove the curve code before the BLAKE2b
+variant is trusted with anyone's money.
+
+It was NOT vendored here, and the reason is the one function this file does not
+want: that module also exposes `sign()`. `vendor/` in this repository is
+verbatim-from-upstream and must not be edited, so vendoring it would put a
+working signer in the tree of a repository whose strongest claim to an outside
+agent is that it holds no key and cannot sign - `tests/test_settle.py` test 12
+is that claim made executable. Trading that for the removal of ninety lines of
+duplication is the wrong way round.
+
+What makes two copies safe is that NEITHER is the source of truth: both are
+pinned to the same external vectors (RFC 8032 section 7.1, and Nano's published
+zero-seed account). Two implementations held to one published standard cannot
+drift in any way that matters, because the standard is what they are compared
+against rather than each other. If a third copy is ever written, pin it to the
+same two vectors and it joins them safely; `scripts/check_twin_drift.py` in
+`dhyabi2/swarm-decisions` covers the nano_sdk/nano_mcp twins and does not see
+either of these.
 """
 
 import argparse
