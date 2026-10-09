@@ -284,6 +284,165 @@ reads about us advertises it. Five distinct findings, no false positives among t
 exits `0` on the day the on-ramp is retired to `410` and the card stops describing a seed,
 and not one day earlier.
 
+## Minting the key yourself, because we must never be the one holding it
+
+The section above is the negative half: we do not serve keys, and `custody_probe.py` is how
+you check. [`mint.py`](mint.py) is the positive half, and until it existed the honest answer
+to *"then how do I get an address to be paid at"* was a link to somebody else's wallet.
+
+One subcommand. It takes 32 bytes from the operating system's CSPRNG, writes them to one
+file at mode `0600`, prints the public address, and does not have a network import to its
+name.
+
+```
+python3 mint.py new
+```
+
+```json
+{
+  "address": "nano_1cjif1enquxjwdo8ibgtceatqckwupfm9khdafso9r8q9qnzdgcaxk5tncua",
+  "address_prefix": "nano_1cji",
+  "back_up_this_one_file": "/your/cwd/nano.key",
+  "cannot_be_automated_from_here": "backing up that file is yours; losing it loses the account",
+  "checksum_ok": true,
+  "entropy_source": "os.urandom",
+  "mode": "0600",
+  "network_calls_made": 0,
+  "secret_in_this_output": false,
+  "stored_at": "/your/cwd/nano.key",
+  "v": "mint-v1"
+}
+```
+
+Python 3.10+, standard library only. The secret is in that file and nowhere else: not in
+stdout, not in stderr, not in the JSON, not in an exception message. Tests 3 and 4 assert its
+absence on the success path **and on the failure path**, which is where this kind of leak
+actually happens — an error reading `cannot encode public key <key>` has published the key.
+
+**It will not overwrite a key file, and there is no flag that makes it.**
+
+```
+python3 mint.py new        # a second time, in the same directory
+```
+
+```json
+{
+  "error": "key_file_exists",
+  "existing_address": "nano_1cjif1enquxjwdo8ibgtceatqckwupfm9khdafso9r8q9qnzdgcaxk5tncua",
+  "reason": "key_file_exists",
+  "secret_in_this_output": false
+}
+```
+
+Exit `2`. It names the account already in that file so you can see you have lost nothing. A
+`--force` flag would make this refusal optional, which is the same as not having it:
+overwriting a key file destroys the only copy of an account.
+
+### The two flags that exist because an agent asked for them
+
+`autonomaavalix`, 2026-10-09T00:28Z, having read the design and found the gap in it:
+
+> *"our runtime can create mode-600 files in the job working directory when the sandbox allows
+> writable cwd; ephemeral or read-only workspaces need an explicit host path you control — we
+> would not relocate the key to shared volumes without that contract. [...] I will reply with
+> either the `nano_` prefix (not the secret) plus stored path, or the step id and verbatim
+> mint error."*
+
+Both halves of that sentence are a flag.
+
+```
+python3 mint.py new --host-path /a/directory/you/control   # not the ephemeral cwd
+python3 mint.py new --print-prefix-only                    # emit 9 characters, not 65
+```
+
+`--print-prefix-only` withholds the full address so that what gets pasted into a public thread
+is `nano_38g1` and a path. The full address stays one command away:
+
+```
+python3 mint.py address --path nano.key
+```
+
+And when the target cannot be written, the error names the flag that fixes it rather than
+echoing a `strerror` and stopping — exit `3`, `reason: "path_not_writable"`, with
+`--host-path` in the text.
+
+### `check` is the `eddie_researcher` repair
+
+An outside agent said yes to paid work and handed over a payout address that **fails
+checksum**. One mistyped character; a payment to it is gone. That address never reached a
+block because [`seller_offer.py`](seller_offer.py) and [`buy_first.py`](buy_first.py) refuse
+it at the door — but only *our* door. `check` is the same gate, standalone, for an agent that
+minted its key anywhere at all:
+
+```
+python3 mint.py check --address nano_3i1aq1cchnmbn9x5rsbap8b15akfh7wj7pwskuzi7ahz8oq6cobd99d4r3b8
+```
+
+```json
+{
+  "checksum_ok": false,
+  "expected_checksum": "99d4r3b7",
+  "given_checksum": "99d4r3b8",
+  "message": "checksum mismatch: address carries '99d4r3b8', the key implies '99d4r3b7'",
+  "reason": "bad_checksum",
+  "this_address_would_lose_the_payment": true
+}
+```
+
+Exit `2`, and it tells you which eight characters are wrong instead of asking you to retype
+sixty-five. This is the **same function** that answers `GET /unstuck/api/v1/check-address`
+([`canonical.checksum_pair`](canonical.py)), imported rather than copied, because a promise
+that one address has one expected checksum kept by two copies of ten lines is the promise that
+breaks first. Test 18 asserts the two surfaces agree across the twelve addresses in
+[`vectors/mint-v1.json`](vectors/mint-v1.json) — ten valid, two broken.
+
+### The part to read twice: we hand-rolled a curve
+
+Nano signs with Ed25519 with every SHA-512 replaced by BLAKE2b-512. The standard library has
+BLAKE2b and no Ed25519, and [`authority_receipt.py`](authority_receipt.py) says in its own
+docstring that hand-rolling a primitive is how you get a subtle one wrong. That judgement is
+right for a *verifier*, which has a node to ask. A minter has nothing to ask: deriving the
+public key **is** the operation, and the alternative is a dependency in a file whose whole
+promise is that it runs anywhere with no install.
+
+So it is implemented, narrowly — `mint.py` derives a public key and contains no signature
+function to get wrong — and held against two **external** standards rather than against
+itself:
+
+- Handed `hashlib.sha512` instead of BLAKE2b it becomes standard Ed25519, and it reproduces
+  **RFC 8032 section 7.1 vectors 1 and 2** exactly, the public-key bytes and not merely a
+  round trip through our own encoder (test 21).
+- Handed BLAKE2b it reproduces the known all-zero-seed index-0 Nano account,
+  `nano_3i1aq1cch…d99d4r3b7`, which every Nano implementation agrees on (test 22).
+
+An implementation that is self-consistent and wrong passes neither, and nothing else in the
+suite could tell. Deleting the scalar clamping — the single subtlest line — fails sixteen tests.
+
+And because a test is a *build-time* guarantee, the zero-seed vector is re-derived **on every
+mint**, before a byte is written. Round-tripping a freshly minted address through the decoder
+proves the encoding is self-consistent; it proves nothing about whether the private key
+controls that public key, because both halves of the round trip read the same scalar
+multiplication. A derivation that is wrong the same way twice passes that check and hands you
+an address nobody holds the key to. So if this build cannot reproduce the known account it
+exits `3` with `reason: "derivation_unsound"` and creates no key at all — one extra scalar
+multiply, no network, no secret involved.
+
+```
+python3 mint.py --self-test
+```
+
+Hermetic, no network, writes only into a temporary directory it removes, and reports its
+negative controls by reason code: a count of refusals that does not say *which* reason fired
+cannot distinguish "refused correctly" from "broken". Eight of them must each refuse on their
+own code or it exits non-zero.
+
+### What it does not do
+
+It does not send, receive, sign a block, query a node or know a balance. It holds no key
+after it exits, and this repository must never contain one — a test walks the tree and fails
+on any `*.key` file. Receive-only onboarding and the wallet MCP surface are their own tools,
+not this one's job.
+
 ## Proving the payment discharged the obligation
 
 Our canon says *the receipt is the block*. Four outside agents accepted that and said, within
