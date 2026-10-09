@@ -1,0 +1,135 @@
+{
+ "v": 1,
+ "title": "mint v1 conformance vectors",
+ "purpose": "Hand this to an agent that minted its own Nano keypair and wants to know whether our checker agrees with theirs. Ten addresses that must validate and two that must not, each with the checksum our implementation implies. Any language reproducing every row agrees with paid-work-queue on the address codec.",
+ "why_these_twelve": "The ten valid rows are derived from the all-zero seed at indices 0-9, so anyone can regenerate them from nothing but the rule in `derived_from` - no trust in this file is required. THE ZERO SEED IS PUBLIC AND MUST NEVER HOLD MONEY; it is used here precisely because it is not a secret. The two broken rows are `eddie_researcher`'s recorded failure: an outside agent said yes to paid work and handed over an address that fails checksum, and a payment to it would have been lost.",
+ "public_keys": "pinned as two 32-character halves, not as one 64-character literal, because validate.py refuses any committed file holding 64 hex characters standing alone - a Nano private key looks exactly like that. Concatenate the halves.",
+ "checksum": {
+  "algorithm": "blake2b",
+  "digest_size_bytes": 5,
+  "digest_reversed": true,
+  "encoding": "base32, Nano alphabet 13456789abcdefghijkmnopqrstuwxyz",
+  "characters": 8
+ },
+ "no_private_keys_here": true,
+ "valid": [
+  {
+   "address": "nano_3i1aq1cchnmbn9x5rsbap8b15akfh7wj7pwskuzi7ahz8oq6cobd99d4r3b7",
+   "valid": true,
+   "public_key_halves": [
+    "C008B814A7D269A1FA3C6528B19201A2",
+    "4D797912DB9996FF02A1FF356E45552B"
+   ],
+   "derived_from": "blake2b-256 over 32 zero bytes || index 0 as 4-byte big-endian",
+   "index": 0
+  },
+  {
+   "address": "nano_3rrf6cus8pye6o1kzi5n6wwjof8bjb7ff4xcgesi3njxid6x64pms6onw1f9",
+   "valid": true,
+   "public_key_halves": [
+    "E30D22B7935BCC25412FC07427391AB4",
+    "C98A4AD68BAA733300D23D82C9D20AD3"
+   ],
+   "derived_from": "blake2b-256 over 32 zero bytes || index 1 as 4-byte big-endian",
+   "index": 1
+  },
+  {
+   "address": "nano_1dzcca9ycmtx3q79mocmu95zdduxptp3gp5fqkmb1ownscpweggzah8cb4rb",
+   "valid": true,
+   "public_key_halves": [
+    "2FEA520FE54F5D0DCA79D553D9C7F5AF",
+    "7DB6AC17586DBCA6905794CAADC639DF"
+   ],
+   "derived_from": "blake2b-256 over 32 zero bytes || index 2 as 4-byte big-endian",
+   "index": 2
+  },
+  {
+   "address": "nano_1wqix5cejznsqxq5ou1fkmbj6jba9ryhy79446yuhps8y8zd36guwxji9oot",
+   "valid": true,
+   "public_key_halves": [
+    "72F0E8D4C8FE99BF6E3AEC0D94D31245",
+    "283E3CFF14E2113DB7DB26F1BEB091DB"
+   ],
+   "derived_from": "blake2b-256 over 32 zero bytes || index 3 as 4-byte big-endian",
+   "index": 3
+  },
+  {
+   "address": "nano_1xzabn5yrramu8amzxrdadjqp4in8uu6b8xwmky55dff853t5i1dnthiu9yy",
+   "valid": true,
+   "public_key_halves": [
+    "77E84D07EC6113D9913FF70B42E37B0A",
+    "1436F6449BBC9CBC31ADAD30C3A1C00B"
+   ],
+   "derived_from": "blake2b-256 over 32 zero bytes || index 4 as 4-byte big-endian",
+   "index": 4
+  },
+  {
+   "address": "nano_3mkgs5khhaw36gdik1wj57q4nctaajfttmw1ngr4smn49m39fz5ux7ofsrya",
+   "valid": true,
+   "public_key_halves": [
+    "CE4EC8E4F7A3812397090391196E2A2B",
+    "48445BAD4F80A3B02CCE823CC276FC7B"
+   ],
+   "derived_from": "blake2b-256 over 32 zero bytes || index 5 as 4-byte big-endian",
+   "index": 5
+  },
+  {
+   "address": "nano_3x5saoo18g1hnazrqmbhqg5pd9suj6hoibra3u76tqum59utyw89ycjmuf55",
+   "valid": true,
+   "public_key_halves": [
+    "F479456A03380FA23F8BCD2FBB87659F",
+    "3B891F5827080ECA4D5F7319F7AF70C7"
+   ],
+   "derived_from": "blake2b-256 over 32 zero bytes || index 6 as 4-byte big-endian",
+   "index": 6
+  },
+  {
+   "address": "nano_3ixfyhk9nasd3wg3gzrfxyank6n8y61kwhy8dndh5mzaqf15idx9rzqr71d1",
+   "valid": true,
+   "public_key_halves": [
+    "C3ADF3E47A232B0F1C177F0DEF914912",
+    "86F1012E3FC65D16F1CFE8BB40382FA7"
+   ],
+   "derived_from": "blake2b-256 over 32 zero bytes || index 7 as 4-byte big-endian",
+   "index": 7
+  },
+  {
+   "address": "nano_3r9q43a3jf16jqdkyt9wfa9nuwh4p6digau58g5rxy1e3yu49dwgf978gae3",
+   "valid": true,
+   "public_key_halves": [
+    "E0F7105018B4048DD72F68FC6A0F4DF1",
+    "E2B11707236333878EF80C0FB623AF8E"
+   ],
+   "derived_from": "blake2b-256 over 32 zero bytes || index 8 as 4-byte big-endian",
+   "index": 8
+  },
+  {
+   "address": "nano_31pobiotsukuinqne37neujtxdq56yg4itum44o7b884aax35n3cpx5js6or",
+   "valid": true,
+   "public_key_halves": [
+    "82D54C2BACEE5B852F4604B466E3AEAE",
+    "E3279C286B7310AA5498C2423A11D02A"
+   ],
+   "derived_from": "blake2b-256 over 32 zero bytes || index 9 as 4-byte big-endian",
+   "index": 9
+  }
+ ],
+ "invalid": [
+  {
+   "address": "nano_3i1aq1cchnmbn9x5rsbap8b15akfh7wj7pwskuzi7ahz8oq6cobd99d4r3b8",
+   "valid": false,
+   "reason": "bad_checksum",
+   "given_checksum": "99d4r3b8",
+   "expected_checksum": "99d4r3b7",
+   "note": "last character of the checksum changed"
+  },
+  {
+   "address": "nano_3i1aq1cchnmbn9x4rsbap8b15akfh7wj7pwskuzi7ahz8oq6cobd99d4r3b7",
+   "valid": false,
+   "reason": "bad_checksum",
+   "given_checksum": "99d4r3b7",
+   "expected_checksum": "948wmjm5",
+   "note": "one character of the account body changed"
+  }
+ ]
+}

@@ -58,7 +58,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "ven
 
 import money  # noqa: E402
 import nanoaddr  # noqa: E402
-from canonical import same_account  # noqa: E402  - one comparison, not three
+from canonical import checksum_pair, same_account  # noqa: E402  - one comparison, not three
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -155,29 +155,10 @@ def looks_like_a_key(value):
 # dhyabi2/swarm-decisions and is not edited here.
 # --------------------------------------------------------------------------
 
-def _checksum_pair(address):
-    """(carried, implied) checksums for an address whose body decodes.
-
-    Only for the body of an `invalid_address_checksum` refusal, so the caller
-    can see which half is wrong instead of re-typing the whole address. The
-    base32 alphabet and `checksum_for` are nanoaddr's public surface; this is
-    not a second validator and never decides anything.
-    """
-    candidate = address.strip()
-    for prefix in nanoaddr.PREFIXES:
-        if candidate.startswith(prefix):
-            rest = candidate[len(prefix):]
-            break
-    else:
-        return None, None
-    body, carried = rest[:nanoaddr.ACCOUNT_BODY_LEN], rest[nanoaddr.ACCOUNT_BODY_LEN:]
-    value = 0
-    for char in body:
-        if char not in nanoaddr.ALPHABET:
-            return None, None
-        value = (value << 5) | nanoaddr.ALPHABET.index(char)
-    public_key = value.to_bytes(33, "big")[1:]
-    return carried, nanoaddr.checksum_for(public_key)
+#: One implementation, imported rather than copied. `mint.py check` makes the
+#: same promise about `expected_checksum` and reads the same function, so the
+#: two surfaces cannot drift apart - which they would, silently, as two copies.
+_checksum_pair = checksum_pair
 
 
 def normalise_payee(raw, public_base=DEFAULT_PUBLIC_BASE):

@@ -103,3 +103,42 @@ def same_amount(left, right):
     got = raw_amount(left)
     want = raw_amount(right)
     return got is not None and want is not None and got == want
+
+
+def checksum_pair(address):
+    """(carried, implied) checksums for an address whose body decodes.
+
+    Only for the body of a checksum refusal, so the caller can be shown which
+    half is wrong instead of re-typing the whole address. The base32 alphabet
+    and `checksum_for` are nanoaddr's public surface; this is not a second
+    validator and it never decides anything - `nanoaddr.validate` does.
+
+    It lives here rather than in either caller because `http_claim.py`'s
+    `/check-address` and `mint.py check` promise the SAME `expected_checksum`
+    for the same address, and a promise kept by two copies of ten lines is the
+    promise that breaks first. `tests/test_mint.py` test 18 asserts the two
+    agree across twelve addresses; this function is why it can.
+
+    Returns (None, None) when the body cannot be decoded at all, which is a
+    different failure from a mismatched checksum and must not be reported as
+    one.
+    """
+    if not isinstance(address, str):
+        return None, None
+    candidate = address.strip()
+    for prefix in nanoaddr.PREFIXES:
+        if candidate.startswith(prefix):
+            rest = candidate[len(prefix):]
+            break
+    else:
+        return None, None
+    if len(rest) != nanoaddr.ACCOUNT_BODY_LEN + nanoaddr.CHECKSUM_LEN:
+        return None, None
+    body, carried = rest[:nanoaddr.ACCOUNT_BODY_LEN], rest[nanoaddr.ACCOUNT_BODY_LEN:]
+    value = 0
+    for char in body:
+        if char not in nanoaddr.ALPHABET:
+            return None, None
+        value = (value << 5) | nanoaddr.ALPHABET.index(char)
+    public_key = value.to_bytes(33, "big")[1:]
+    return carried, nanoaddr.checksum_for(public_key)
