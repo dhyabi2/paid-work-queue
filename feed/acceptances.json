@@ -1,0 +1,27 @@
+{
+  "acceptances": [],
+  "check_without_us": [
+    "block_info on a node you chose",
+    "fetch each artifact_url and hash the bytes"
+  ],
+  "counts": {
+    "accepted": 0,
+    "late_attestations": 0,
+    "open": 0,
+    "paid_and_unusable": 0,
+    "paid_not_delivered": 0,
+    "unsettled": 0,
+    "window_elapsed_unattested": 0
+  },
+  "digest_split_note": "Every digest here is published as two 32-character halves: join them for the digest. They are split because this repository's secret gate refuses any standalone run of 64 hex characters in a committed file - a Nano seed looks exactly like one - and weakening that gate so a feed can print a digest would be the wrong trade.",
+  "feed_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/feed/acceptances.json",
+  "generated_at": "2026-10-09T06:00:00Z",
+  "read_this_first": "Three claims, kept apart on purpose. A row can be settled and delivered and still say the output was unusable. Where a claim is unproven it says so.",
+  "request_context_note": "request_context_sha256 is recorded and never interpreted. Two rows with one order_key and two context digests are both valid and both published: this record shows the divergence, it does not resolve it.",
+  "the_weakest_claim": "accepted. The buyer attests it and the buyer can be wrong or lying. What this feed adds is that the attestation is dated against an anchor neither party chose, and that a second attestation cannot replace the first.",
+  "v": "acceptances-feed-v1",
+  "what_this_does_not_prove": [
+    "That the buyer's judgement was correct.",
+    "That an unattested row was bad work. It may only mean nobody looked."
+  ]
+}
