@@ -109,6 +109,31 @@ class VerdictTest(unittest.TestCase):
         self.assertTrue(artifact["read_this_first"].strip())
         self.assertEqual(artifact["primitives_used"], list(PRIMITIVES))
 
+    # -- 1b ----------------------------------------------------------------
+    def test_1b_every_check_without_us_url_names_a_file_in_this_tree(self):
+        """A `check_without_us` entry is the first thing a stranger fetches, so
+        it has to be fetchable. raw.githubusercontent.com serves blobs only: a
+        path that is a directory, or that names nothing, answers 404. One row -
+        `order-is-in-the-amount` - pointed at `vectors/`, the directory, and the
+        one URL in the artifact a stranger could not GET was in the row whose
+        whole subject is checking us without us. Measured 2026-10-11: that URL
+        answered 404 and `vectors/order-bound-amount-v1.json` answered 200.
+
+        Offline by construction - it resolves each URL against this working tree
+        rather than over the network - so it holds in CI and in a fork."""
+        for claim in built()["claims"]:
+            for url in claim["check_without_us"]:
+                self.assertTrue(url.startswith(verdict.RAW),
+                                "%s: %s is not a raw URL of this repository"
+                                % (claim["id"], url))
+                path = url[len(verdict.RAW):]
+                self.assertTrue(path and not path.endswith("/"),
+                                "%s: %s names a directory; raw.githubusercontent"
+                                ".com answers 404 for one" % (claim["id"], url))
+                self.assertTrue(os.path.isfile(os.path.join(ROOT, path)),
+                                "%s: %s is not a file in this tree"
+                                % (claim["id"], url))
+
     # -- 2 -----------------------------------------------------------------
     def test_2_nothing_is_unrecheckable_from_its_own_inputs(self):
         self.assertEqual(missing_inputs(built()), [])
