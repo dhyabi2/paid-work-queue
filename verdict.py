@@ -594,7 +594,13 @@ def build(root, *, now):
         "(modulus - 1)). `pay_raw` must equal `amount_raw` + tag, in base-10 "
         "integers - raw is an integer and a float loses its low digits.",
         rule="the_tag_and_the_payable_amount_reproduce",
-        check_without_us=[RAW + "vectors/", RAW + "order_bound_amount.py"],
+        # The FILE, not the directory it is in: raw.githubusercontent.com serves
+        # blobs only and answers 404 for a path ending in a slash, so the first
+        # thing this row told a stranger to fetch was the one URL in the
+        # artifact that could not be fetched. Measured 2026-10-11:
+        # GET .../main/vectors/ -> 404, GET .../main/vectors/order-bound-amount-v1.json -> 200.
+        check_without_us=[RAW + "vectors/order-bound-amount-v1.json",
+                          RAW + "order_bound_amount.py"],
         falsified_by="one vector whose tag or pay_raw does not reproduce",
         equivalent_command="python3 order_bound_amount.py --self-test"))
 
