@@ -182,7 +182,24 @@ def _duplicates(ids):
 # 2. jobs.json
 # --------------------------------------------------------------------------
 
-def check_jobs(document):
+def check_jobs(document, now=None):
+    """Check the board. With `now` (RFC3339 UTC) also check it against a clock.
+
+    Every other staleness check in this repository rebuilds an artifact at its
+    OWN `generated_at`, so the only thing that can move the bytes is the tree.
+    That is deliberate and it is also blind in one direction: it cannot notice
+    time passing. On 2026-10-24 the published feed had advertised three jobs as
+    `open` with `hours_left: 216` for sixteen days, seven of them after the
+    board expired, and nothing in the tree had drifted - so every check here
+    passed while the public board was telling strangers 0.45 XNO was claimable
+    when the true figure was 0. A board that advertises work nobody can claim
+    is worse than an empty one: the agents who read it are the ones who check.
+    `now` is optional and never defaulted, because the rest of this file holds
+    no clock; CI supplies the real one.
+    """
+    now_parts = _rfc3339(now) if now is not None else None
+    if now is not None and now_parts is None:
+        return ["--now is not an RFC3339 UTC timestamp: %r" % (now,)]
     errors = []
     if not isinstance(document, dict):
         return ["jobs.json: top level must be a JSON object"]
@@ -233,6 +250,15 @@ def check_jobs(document):
             errors.append(
                 "%s: 'expires' (%s) does not come after 'posted' (%s)"
                 % (where, expires, posted)
+            )
+
+        if now_parts and expires_parts and job.get("state") == "open" \
+                and expires_parts <= now_parts:
+            errors.append(
+                "%s: state is 'open' but 'expires' (%s) has passed at %s - "
+                "renew the window or set the state to 'expired'; an expired "
+                "job published as open advertises work nobody can claim"
+                % (where, expires, now)
             )
 
         state = job.get("state")
@@ -764,7 +790,7 @@ def compute_stats(jobs_document, receipts_document, operator_accounts=()):
 # entry point
 # --------------------------------------------------------------------------
 
-def run(root, base_ref=None, write_stats=True, out=sys.stdout):
+def run(root, base_ref=None, write_stats=True, out=sys.stdout, now=None):
     errors = scan_for_secrets(root)
     if errors:
         # The secret gate runs before every other check and stops the run.
@@ -798,7 +824,7 @@ def run(root, base_ref=None, write_stats=True, out=sys.stdout):
         return 1
 
     jobs_document, receipts_document = documents["jobs.json"], documents["receipts.json"]
-    errors.extend(check_jobs(jobs_document))
+    errors.extend(check_jobs(jobs_document, now=now))
     errors.extend(check_receipts(receipts_document))
     if not errors:
         errors.extend(cross_check(jobs_document, receipts_document))
@@ -859,9 +885,17 @@ def main(argv=None):
         help="git ref of the parent commit, for the append-only check "
              "(CI passes the pull request's base SHA)",
     )
+    parser.add_argument(
+        "--now", default=None,
+        help="RFC3339 UTC. Supplied, the board is also checked against this "
+             "clock: a job whose state is 'open' after its 'expires' is an "
+             "error. Omitted, no clock check runs - this tool holds no clock "
+             "of its own, CI passes the real one.",
+    )
     parser.add_argument("--no-write-stats", action="store_true")
     args = parser.parse_args(argv)
-    return run(args.root, base_ref=args.base, write_stats=not args.no_write_stats)
+    return run(args.root, base_ref=args.base, write_stats=not args.no_write_stats,
+               now=args.now)
 
 
 if __name__ == "__main__":

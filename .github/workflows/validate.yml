@@ -34,6 +34,34 @@ jobs:
       - name: Validate the tree (secret gate, prices, addresses, states)
         run: python3 validate.py --no-write-stats
 
+      # EVERY OTHER STALENESS CHECK IN THIS FILE IS BLIND TO THE CLOCK, BY
+      # DESIGN. The verdict, stats and rpc steps each rebuild an artifact at
+      # its OWN `generated_at` so that only the tree can move the bytes. That
+      # is right for tree drift and it cannot see time pass. On 2026-10-24 the
+      # published board had advertised three jobs as `open` with
+      # `hours_left: 216` for sixteen days - seven of them after the window
+      # closed on 2026-10-17 - telling strangers 0.45 XNO was claimable when
+      # the true figure was 0. Nothing had drifted, so every check above went
+      # green, and `jobs_feed.py check` already had the `feed_stale` verdict
+      # that catches it in a fifth of a second. Nothing ran it.
+      #
+      # These two steps take the clock from outside the tree, so an expired
+      # board turns a silent public lie into a red build. A red build on an
+      # untouched repository is the intended behaviour: the remedy is to renew
+      # the window or set the state to `expired`, and either is one commit.
+      - name: The board may not advertise work whose window has closed
+        run: |
+          now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          echo "checking the board against the wall clock: $now"
+          python3 validate.py --no-write-stats --now "$now" \
+            || { echo "The board advertises an expired job as open. Renew 'expires' in jobs.json, or set that job's state to 'expired', then rebuild the feed."; exit 1; }
+
+      - name: The published feed may not outlive the board it describes
+        run: |
+          now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          python3 jobs_feed.py check --feed feed/jobs.json --jobs jobs.json --now "$now" \
+            || { echo "feed/jobs.json is stale against the wall clock; run 'python3 jobs_feed.py build --now <timestamp>' and commit it."; exit 1; }
+
       - name: Append-only check against the base commit
         if: github.event_name == 'pull_request'
         env:

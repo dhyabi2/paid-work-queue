@@ -534,3 +534,59 @@ class SecretGateAndBlockHashInteraction(TreeCase):
         receipts["receipts"][0]["block_hash"] = "deadbeef" * 8
         code, output = self.run_tree(self.tree(jobs, receipts))
         self.assertEqual(code, 1, output)
+
+
+class OpenAfterExpiryTest(unittest.TestCase):
+    """The board may not advertise as open a job whose window has closed.
+
+    These are the cases the tree passed cleanly on 2026-10-24 while the public
+    feed told strangers 0.45 XNO was claimable and the true figure was 0. Every
+    other staleness check here rebuilds an artifact at its own `generated_at`,
+    which cannot see time pass; this one takes the clock from outside.
+    """
+
+    def test_open_past_its_expiry_is_refused(self):
+        errors = check_jobs(jobs_doc(job()), now="2026-10-24T06:00:00Z")
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("state is 'open'", errors[0])
+        self.assertIn("has passed", errors[0])
+
+    def test_the_real_board_of_2026_10_24_is_refused(self):
+        """The exact shape that went unnoticed for sixteen days."""
+        board = jobs_doc(
+            job(id="job-2026-09-26-001", expires="2026-10-17T07:00:00Z"),
+            job(id="job-2026-09-26-002", expires="2026-10-17T07:00:00Z",
+                price_xno="0.15", price_raw=str(15 * XNO // 100)),
+            job(id="job-2026-09-26-003", expires="2026-10-17T07:00:00Z",
+                price_xno="0.05", price_raw=str(5 * XNO // 100)),
+        )
+        self.assertEqual(check_jobs(board), [])          # the old blind pass
+        errors = check_jobs(board, now="2026-10-24T06:00:00Z")
+        self.assertEqual(len(errors), 3, errors)
+
+    def test_open_inside_its_window_passes(self):
+        self.assertEqual(
+            check_jobs(jobs_doc(job(expires="2026-11-14T07:00:00Z")),
+                       now="2026-10-24T06:00:00Z"),
+            [],
+        )
+
+    def test_expiry_exactly_at_now_is_closed(self):
+        errors = check_jobs(jobs_doc(job(expires="2026-10-24T06:00:00Z")),
+                            now="2026-10-24T06:00:00Z")
+        self.assertEqual(len(errors), 1, errors)
+
+    def test_a_state_other_than_open_is_not_judged_by_the_clock(self):
+        for state in ("expired", "cancelled"):
+            self.assertEqual(
+                check_jobs(jobs_doc(job(state=state)), now="2026-10-24T06:00:00Z"),
+                [], state,
+            )
+
+    def test_no_clock_means_no_clock_check(self):
+        self.assertEqual(check_jobs(jobs_doc(job())), [])
+
+    def test_an_unparseable_clock_is_refused_rather_than_ignored(self):
+        errors = check_jobs(jobs_doc(job()), now="2026-10-24")
+        self.assertEqual(len(errors), 1, errors)
+        self.assertIn("--now", errors[0])
