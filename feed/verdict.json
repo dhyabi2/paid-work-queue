@@ -50,25 +50,25 @@
       "inputs": {
         "jobs": [
           {
-            "expires": "2026-10-17T07:00:00Z",
+            "expires": "2026-11-14T07:00:00Z",
             "id": "job-2026-09-26-001",
             "price_raw": "250000000000000000000000000000",
             "state": "open"
           },
           {
-            "expires": "2026-10-17T07:00:00Z",
+            "expires": "2026-11-14T07:00:00Z",
             "id": "job-2026-09-26-002",
             "price_raw": "150000000000000000000000000000",
             "state": "open"
           },
           {
-            "expires": "2026-10-17T07:00:00Z",
+            "expires": "2026-11-14T07:00:00Z",
             "id": "job-2026-09-26-003",
             "price_raw": "50000000000000000000000000000",
             "state": "open"
           }
         ],
-        "now": "2026-10-11T12:58:41Z"
+        "now": "2026-10-24T06:05:00Z"
       },
       "recipe": "A job is claimable when its `state` is exactly `open` and its `expires` is strictly later than `now`, both read as RFC3339 UTC. The claim is true if at least one job satisfies both. `now` is the artifact's own generated_at, so the verdict is reproducible from this file rather than from your clock.",
       "rule": "at_least_one_open_job_has_not_expired",
@@ -81,14 +81,14 @@
         "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/jobs.json"
       ],
       "claim": "The published feed describes the published board.",
-      "equivalent_command": "python3 jobs_feed.py check --feed feed/jobs.json --jobs jobs.json --now 2026-10-11T12:58:41Z",
+      "equivalent_command": "python3 jobs_feed.py check --feed feed/jobs.json --jobs jobs.json --now 2026-10-24T06:05:00Z",
       "equivalent_command_is_optional": true,
       "falsified_by": "a digest that does not reproduce from the material",
       "id": "jobs-digest-matches",
       "inputs": {
         "digest_halves": [
-          "5ad9a78d71790e6e609a782611e58ea6",
-          "b60393e301adc2d6eb9281c363c2a0fb"
+          "2361086bf1c0b17cb4340d2927b8b571",
+          "2a4684a95b69d01176b655be224f381e"
         ],
         "fields_in_order": [
           "id",
@@ -111,7 +111,7 @@
             ],
             "claimed_by": null,
             "description": "Send at least 50 small XNO transactions from an account you control and record, for each one, the wall-clock interval between broadcast and the point at which a public node reports the block confirmed. Publish a public repository or gist containing the raw per-transaction measurements (one row per send: timestamp, block hash, node queried, milliseconds to confirmation), the script that produced them, and a short README stating which node(s) you used. We are not asking you to argue that Nano is fast; we are asking for numbers a reader can reproduce with your script.",
-            "expires": "2026-10-17T07:00:00Z",
+            "expires": "2026-11-14T07:00:00Z",
             "id": "job-2026-09-26-001",
             "price_raw": "250000000000000000000000000000",
             "receipt_id": null,
@@ -127,7 +127,7 @@
             ],
             "claimed_by": null,
             "description": "Read https://github.com/dhyabi2/nano-settlement-verify and try to break it. We want the cases its test suite does not cover: inputs where it reports a settlement that did not happen, or refuses one that did. Deliver a public write-up listing each finding with the exact input that triggers it and the observed versus expected behaviour. A finding must be reproducible from your write-up alone. Reporting that you found nothing is an acceptable delivery if you show what you tried.",
-            "expires": "2026-10-17T07:00:00Z",
+            "expires": "2026-11-14T07:00:00Z",
             "id": "job-2026-09-26-002",
             "price_raw": "150000000000000000000000000000",
             "receipt_id": null,
@@ -143,7 +143,7 @@
             ],
             "claimed_by": null,
             "description": "Port vendor/nanoaddr.py from this repository to TypeScript with no runtime dependencies. Same public surface: validate(address) returns a verdict object with the same reason codes (bad_prefix, bad_length, bad_padding, bad_character, bad_checksum), and encode(publicKey) returns the same address. Deliver a public repository with the source and a test file.",
-            "expires": "2026-10-17T07:00:00Z",
+            "expires": "2026-11-14T07:00:00Z",
             "id": "job-2026-09-26-003",
             "price_raw": "50000000000000000000000000000",
             "receipt_id": null,
@@ -442,7 +442,7 @@
   "claims_false_or_unproven": 0,
   "claims_measured": 10,
   "claims_total": 10,
-  "generated_at": "2026-10-11T12:58:41Z",
+  "generated_at": "2026-10-24T06:05:00Z",
   "primitives_used": [
     "blake2b-256",
     "blake2b-40",
