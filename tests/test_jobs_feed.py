@@ -672,6 +672,31 @@ class TheCountdownIsADatedSnapshot(unittest.TestCase):
         taken_at = moment(published["hours_left_as_of"])
         self.assertEqual(hours_left_drift(published, taken_at), [])
 
+    def test_13g_a_row_with_no_countdown_is_not_waved_through(self):
+        # Stripping the field must not be a way out of the check: the build
+        # writes it on every row, so its absence is named, row by row.
+        for strip in ([0], range(len(self.feed["jobs"]))):
+            bare = json.loads(serialise(self.feed).decode("utf-8"))
+            for index in strip:
+                del bare["jobs"][index]["hours_left"]
+            lines = hours_left_drift(bare, self.now)
+            self.assertTrue(any("hours_left is absent" in line for line in lines),
+                            lines)
+            self.assertFalse(check(bare, self.jobs, [], 0, self.now)["ok"])
+
+    def test_13h_a_leap_second_is_refused_not_raised(self):
+        # `validate._rfc3339` admits `:60`; datetime does not. The feed is the
+        # stranger's file, so its fields end in a refusal, never a traceback.
+        leap = json.loads(serialise(self.feed).decode("utf-8"))
+        leap["hours_left_as_of"] = NOW[:17] + "60Z"
+        lines = hours_left_drift(leap, self.now)
+        self.assertTrue(any("is not a timestamp" in line for line in lines), lines)
+
+        leap = json.loads(serialise(self.feed).decode("utf-8"))
+        leap["jobs"][0]["expires"] = leap["jobs"][0]["expires"][:17] + "60Z"
+        lines = hours_left_drift(leap, self.now)
+        self.assertTrue(any("cannot be re-derived" in line for line in lines), lines)
+
 
 if __name__ == "__main__":
     unittest.main()

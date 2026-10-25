@@ -228,7 +228,12 @@ def moment(value, code="bad_expiry"):
     if parts is None:
         raise Refusal(code, "not an RFC3339 UTC timestamp (or not a real date): "
                             "%r" % (value,))
-    return datetime.datetime(*parts, tzinfo=datetime.timezone.utc)
+    try:
+        return datetime.datetime(*parts, tzinfo=datetime.timezone.utc)
+    except ValueError:
+        # `_rfc3339` admits a leap second (`:60`); datetime does not. Refuse
+        # it in the tool's own shape instead of escaping as a traceback.
+        raise Refusal(code, "not a timestamp this tool can place: %r" % (value,))
 
 
 def stamp(value):
@@ -644,7 +649,7 @@ def hours_left_drift(feed, now):
     stale = []
     as_of = feed.get("hours_left_as_of")
     rows = [job for job in feed.get("jobs", []) if isinstance(job, dict)]
-    if not any("hours_left" in job for job in rows):
+    if not rows:
         return stale
 
     if as_of is None:
@@ -672,9 +677,13 @@ def hours_left_drift(feed, now):
         bound = HOURS_LEFT_TOLERANCE_HOURS
 
     for job in rows:
-        if "hours_left" not in job:
-            continue
         job_id = job.get("id")
+        if "hours_left" not in job:
+            # The build writes the countdown on every row, so a row without it
+            # is not this build's output; a reader of that row gets no number
+            # while check would otherwise say ok.
+            stale.append("%s: hours_left is absent" % (job_id,))
+            continue
         shown = job["hours_left"]
         if not isinstance(shown, int) or isinstance(shown, bool):
             stale.append("%s: hours_left is %r, not a whole number of hours"
