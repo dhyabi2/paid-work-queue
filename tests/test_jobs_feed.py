@@ -20,6 +20,7 @@ Nothing opens a socket, and nothing can: test 12 walks the import graph.
 No 64-hex run stands as a single literal, matching the project's secret gate.
 """
 
+import datetime
 import html
 import json
 import os
@@ -36,8 +37,9 @@ import jobs_feed  # noqa: E402
 import validate  # noqa: E402
 from custody_probe import NETWORK_MODULES  # noqa: E402  - reused, not re-listed
 from jobs_feed import (  # noqa: E402
-    BOARD_FIELDS, Refusal, board_digest, build, check, joined, main, moment,
-    read_jobs, read_receipts, render_html, serialise, xno,
+    BOARD_FIELDS, HOURS_LEFT_TOLERANCE_HOURS, Refusal, board_digest, build,
+    check, hours_left_drift, joined, main, moment, read_jobs, read_receipts,
+    render_html, serialise, xno,
 )
 
 SCRIPT = os.path.join(ROOT, "jobs_feed.py")
@@ -563,6 +565,112 @@ class ByteExactAndHermetic(unittest.TestCase):
         # legitimately contains ", " inside a string value, so the honest check
         # is that the file IS the canonical serialisation of its own content.
         self.assertEqual(payload, serialise(json.loads(payload.decode("utf-8"))))
+
+
+class TheCountdownIsADatedSnapshot(unittest.TestCase):
+    """`hours_left` was the one published number no check re-derived.
+
+    Measured on the live feed at 2026-10-25T05:54Z: three rows served
+    `hours_left: 504` when the truth at that instant was 481, overstated by
+    22.9 hours, ONE DAY after the expiry cliff was fixed - and
+    `jobs_feed.py check` at that same wall clock returned
+    `feed_matches_the_board`. The 2026-10-08 feed served 216 for sixteen days
+    by the same mechanism. `hours_left` sat outside `jobs_digest` because it is
+    clock-derived, and outside `check`'s re-derivation loop because that loop
+    had been written for `state` and the aggregates, so it fell between the
+    two.
+
+    Test 13c is the decisive one: the board is still `open`, nothing in the
+    tree has moved, every aggregate agrees, and the only thing wrong is the
+    countdown. Before the fix that case was `feed_matches_the_board`.
+
+    Fixtures are built here rather than taken from the module's own controls,
+    like every other test in this file.
+    """
+
+    def setUp(self):
+        self.jobs = read_jobs(board())
+        self.now = moment(NOW)
+        self.feed, _ = build(self.jobs, [], 0, self.now)
+
+    def test_13_the_snapshot_carries_the_clock_it_was_taken_at(self):
+        self.assertEqual(self.feed["hours_left_as_of"], NOW)
+        self.assertEqual(self.feed["hours_left_as_of"], self.feed["generated_at"])
+        self.assertEqual(self.feed["hours_left_tolerance_hours"],
+                         HOURS_LEFT_TOLERANCE_HOURS)
+        self.assertIn("snapshot", self.feed["hours_left_note"].lower())
+        self.assertEqual(hours_left_drift(self.feed, self.now), [])
+
+    def test_13b_a_row_that_disagrees_with_its_own_expires_is_caught_with_no_clock(self):
+        # Checked AT the snapshot's own instant, so no clock can be what flags
+        # it: a stranger holding this one file and no clock catches a retimed
+        # row, because `expires` travels under `jobs_digest`.
+        retimed = json.loads(serialise(self.feed).decode("utf-8"))
+        retimed["jobs"][0]["hours_left"] += 1
+        lines = hours_left_drift(retimed, self.now)
+        self.assertTrue(any("does not match its own expires" in line
+                            for line in lines), lines)
+        self.assertTrue(any("job-test-7" in line for line in lines), lines)
+
+    def test_13c_a_countdown_past_the_declared_bound_is_stale_on_an_open_board(self):
+        inside = self.now + datetime.timedelta(
+            hours=HOURS_LEFT_TOLERANCE_HOURS - 1)
+        outside = self.now + datetime.timedelta(
+            hours=HOURS_LEFT_TOLERANCE_HOURS + 2)
+
+        # The board has NOT lapsed at either instant - this is drift, not the
+        # expiry cliff, and the two must stay distinguishable.
+        for when in (inside, outside):
+            still_open, _ = build(self.jobs, [], 0, when)
+            self.assertEqual(still_open["jobs"][0]["state"], "open")
+
+        ok = check(self.feed, self.jobs, [], 0, inside)
+        self.assertTrue(ok["ok"], ok["stale_fields"])
+
+        bad = check(self.feed, self.jobs, [], 0, outside)
+        self.assertFalse(bad["ok"])
+        self.assertEqual(bad["reason"], "feed_stale")
+        # The board did not move, so this is not a digest mismatch.
+        self.assertEqual(bad["jobs_digest"], bad["published_digest"])
+        self.assertTrue(any("hours_left" in line for line in bad["stale_fields"]),
+                        bad["stale_fields"])
+
+    def test_13d_an_undated_countdown_is_refused(self):
+        undated = json.loads(serialise(self.feed).decode("utf-8"))
+        del undated["hours_left_as_of"]
+        lines = hours_left_drift(undated, self.now)
+        self.assertTrue(any("hours_left_as_of" in line for line in lines), lines)
+
+    def test_13e_a_feed_may_tighten_its_own_bound_but_never_widen_it(self):
+        tighter = json.loads(serialise(self.feed).decode("utf-8"))
+        tighter["hours_left_tolerance_hours"] = 1
+        self.assertEqual(hours_left_drift(tighter, self.now), [])
+        two_hours_on = self.now + datetime.timedelta(hours=2)
+        self.assertTrue(hours_left_drift(tighter, two_hours_on),
+                        "a feed that declares one hour must be held to one hour")
+
+        looser = json.loads(serialise(self.feed).decode("utf-8"))
+        looser["hours_left_tolerance_hours"] = HOURS_LEFT_TOLERANCE_HOURS * 2
+        self.assertTrue(any("looser" in line
+                            for line in hours_left_drift(looser, self.now)))
+
+        for junk in (None, "168", 0, -1, True):
+            broken = json.loads(serialise(self.feed).decode("utf-8"))
+            broken["hours_left_tolerance_hours"] = junk
+            self.assertTrue(
+                any("hours_left_tolerance_hours" in line
+                    for line in hours_left_drift(broken, self.now)),
+                "a bound of %r must be refused, not used" % (junk,))
+
+    def test_13f_the_committed_feed_is_a_dated_snapshot_too(self):
+        with open(os.path.join(ROOT, "feed", "jobs.json"), "r",
+                  encoding="utf-8") as fh:
+            published = json.load(fh)
+        self.assertEqual(published["hours_left_as_of"], published["generated_at"])
+        # No clock: the published rows must agree with their own `expires` at
+        # their own `hours_left_as_of`, however old the file is.
+        taken_at = moment(published["hours_left_as_of"])
+        self.assertEqual(hours_left_drift(published, taken_at), [])
 
 
 if __name__ == "__main__":
