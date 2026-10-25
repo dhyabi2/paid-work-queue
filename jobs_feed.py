@@ -51,6 +51,7 @@ This file holds no key, signs nothing, makes no network call and holds no clock:
 
 import argparse
 import ast
+import copy
 import datetime
 import hashlib
 import html
@@ -84,6 +85,38 @@ BOARD_FIELDS = ("id", "title", "description", "acceptance", "price_raw",
                 "expires", "claimed_by", "receipt_id")
 
 SECONDS_PER_HOUR = 3600
+
+# `hours_left` IS THE ONE PUBLISHED NUMBER NO CHECK IN THIS REPOSITORY EVER
+# RE-DERIVED. It is a function of a clock and it is pinned to ours, so a reader
+# who subtracts `expires` from their OWN clock gets a different answer from the
+# one we printed. Measured 2026-10-25T05:54Z: the published feed served
+# `hours_left: 504` on all three rows when the truth at that moment was 481 -
+# overstated by 22.9 hours, one day after the expiry cliff was fixed - and
+# `jobs_feed.py check` at that same wall clock returned
+# `ok: true, feed_matches_the_board`. The 2026-10-08 feed served 216 for
+# sixteen days by the same mechanism. `check` already re-derives `state` and
+# every aggregate at `now`; `hours_left` was left out of the digest (it is
+# clock-derived) AND out of the re-derivation, so it fell between the two.
+#
+# The remedy is not to alarm on a number that rots by design, it is to stop
+# publishing an undated one. `hours_left` is now declared for what it is - a
+# snapshot taken at `hours_left_as_of` - which makes it checkable WITH NO CLOCK
+# AT ALL: it must equal the exact derivation from the feed's own `expires` at
+# the feed's own `hours_left_as_of`. Beside that, the drift a reader may find is
+# declared rather than left to chance, and bounded, so a snapshot can age a week
+# and cannot become a 216-hour lie in silence.
+HOURS_LEFT_TOLERANCE_HOURS = 168
+
+HOURS_LEFT_NOTE = (
+    "`hours_left` is a SNAPSHOT taken at `hours_left_as_of`, not a live "
+    "countdown. Derive it yourself from `expires` and your own clock and you "
+    "will get a different number the moment this file is more than an hour "
+    "old; `expires` is the ground truth and is the field under `jobs_digest`. "
+    "Two things about the snapshot are checkable: it must equal "
+    "floor((expires - hours_left_as_of) / 3600) exactly, which needs no clock "
+    "and no code of ours, and it may not differ from the value at your clock "
+    "by more than `hours_left_tolerance_hours` - past that this feed is stale "
+    "and `jobs_feed.py check` says so.")
 
 # The doors, each stated as it actually works in this repository today.
 # `by_http` carries `deployed: false` on purpose: the README says in as many
@@ -195,7 +228,12 @@ def moment(value, code="bad_expiry"):
     if parts is None:
         raise Refusal(code, "not an RFC3339 UTC timestamp (or not a real date): "
                             "%r" % (value,))
-    return datetime.datetime(*parts, tzinfo=datetime.timezone.utc)
+    try:
+        return datetime.datetime(*parts, tzinfo=datetime.timezone.utc)
+    except ValueError:
+        # `_rfc3339` admits a leap second (`:60`); datetime does not. Refuse
+        # it in the tool's own shape instead of escaping as a traceback.
+        raise Refusal(code, "not a timestamp this tool can place: %r" % (value,))
 
 
 def stamp(value):
@@ -432,6 +470,9 @@ def build(jobs, receipts, payees_paid, now, buyer_account=None,
         "deliver_first": True,
         "wallet_required_to_claim": False,
         "how_to_claim": HOW_TO_CLAIM,
+        "hours_left_as_of": stamp(now),
+        "hours_left_tolerance_hours": HOURS_LEFT_TOLERANCE_HOURS,
+        "hours_left_note": HOURS_LEFT_NOTE,
         "open_count": open_count,
         "open_total_raw": str(open_raw),
         "open_total_xno": xno(open_raw),
@@ -596,6 +637,81 @@ def render_html(feed):
 # check
 # --------------------------------------------------------------------------
 
+def hours_left_drift(feed, now):
+    """Every way the published `hours_left` can be wrong, as `stale_fields` lines.
+
+    Deliberately reads ONLY the feed, never the board: the point of the field
+    is that a stranger holding this one file can audit it, and the first of the
+    two tests below needs no clock either. `expires` is the ground truth and
+    travels under `jobs_digest`, so a row that agrees with its own `expires` at
+    its own `hours_left_as_of` cannot have been quietly retimed.
+    """
+    stale = []
+    as_of = feed.get("hours_left_as_of")
+    rows = [job for job in feed.get("jobs", []) if isinstance(job, dict)]
+    if not rows:
+        return stale
+
+    if as_of is None:
+        stale.append("hours_left_as_of: absent, so hours_left is an undated "
+                     "countdown and no reader can tell what clock it was taken at")
+        return stale
+    try:
+        taken_at = moment(as_of)
+    except Refusal:
+        stale.append("hours_left_as_of: %r is not a timestamp" % (as_of,))
+        return stale
+
+    bound = feed.get("hours_left_tolerance_hours")
+    if not isinstance(bound, int) or isinstance(bound, bool) or bound < 1:
+        stale.append("hours_left_tolerance_hours: %r is not a positive whole "
+                     "number of hours" % (bound,))
+        bound = HOURS_LEFT_TOLERANCE_HOURS
+    elif bound > HOURS_LEFT_TOLERANCE_HOURS:
+        # A feed may declare a TIGHTER bound than this build's and be held to
+        # it. It may not declare a looser one: that is an artifact voting
+        # itself out of its own check.
+        stale.append("hours_left_tolerance_hours: %d is looser than the %d "
+                     "hours this check allows a snapshot to drift"
+                     % (bound, HOURS_LEFT_TOLERANCE_HOURS))
+        bound = HOURS_LEFT_TOLERANCE_HOURS
+
+    for job in rows:
+        job_id = job.get("id")
+        if "hours_left" not in job:
+            # The build writes the countdown on every row, so a row without it
+            # is not this build's output; a reader of that row gets no number
+            # while check would otherwise say ok.
+            stale.append("%s: hours_left is absent" % (job_id,))
+            continue
+        shown = job["hours_left"]
+        if not isinstance(shown, int) or isinstance(shown, bool):
+            stale.append("%s: hours_left is %r, not a whole number of hours"
+                         % (job_id, shown))
+            continue
+        try:
+            expires = moment(job.get("expires"))
+        except Refusal:
+            stale.append("%s: expires is %r, so hours_left cannot be re-derived"
+                         % (job_id, job.get("expires")))
+            continue
+
+        coherent = hours_left(expires, taken_at)
+        if shown != coherent:
+            stale.append("%s: hours_left is %d in the feed and %d at the "
+                         "feed's own hours_left_as_of (%s) - the snapshot does "
+                         "not match its own expires"
+                         % (job_id, shown, coherent, as_of))
+            continue
+
+        truth = hours_left(expires, now)
+        if abs(shown - truth) > bound:
+            stale.append("%s: hours_left is %d in the feed and %d now, %d hours "
+                         "past the %d this feed declares - rebuild it"
+                         % (job_id, shown, truth, abs(shown - truth) - bound, bound))
+    return stale
+
+
 def check(feed, jobs, receipts, payees_paid, now, operator_accounts=()):
     """Whether the published feed still agrees with the board.
 
@@ -639,6 +755,8 @@ def check(feed, jobs, receipts, payees_paid, now, operator_accounts=()):
         if shown is not None and shown.get("state") != job["state"]:
             stale.append("%s: state is %r in the feed and %r at this time"
                          % (job["id"], shown.get("state"), job["state"]))
+    stale.extend(hours_left_drift(feed, now))
+
     for field in ("open_count", "open_total_raw", "open_total_xno",
                   "settled_count", "sellers_paid",
                   # A stale demand number is the one a reader would mark, so it
@@ -728,6 +846,59 @@ def self_test():
             or lapsed["jobs"][0]["hours_left"] >= 0):
         failures.append({"control": "expired_is_published",
                          "job": lapsed["jobs"][0]})
+
+    # `hours_left` IS A DATED SNAPSHOT, AND EVERY WAY IT CAN LIE IS CAUGHT.
+    # The whole block fails on a build without `hours_left_as_of`, and control
+    # `hours_left_drifts_past_the_declared_bound` is the one that reproduces
+    # 2026-10-08 and 2026-10-25: a board still open, nothing in the tree moved,
+    # and a published countdown hundreds of hours out while `check` said ok.
+    if feed.get("hours_left_as_of") != feed["generated_at"]:
+        failures.append({"control": "hours_left_is_dated",
+                         "hours_left_as_of": feed.get("hours_left_as_of"),
+                         "generated_at": feed["generated_at"]})
+    if feed.get("hours_left_tolerance_hours") != HOURS_LEFT_TOLERANCE_HOURS:
+        failures.append({"control": "hours_left_bound_is_published",
+                         "got": feed.get("hours_left_tolerance_hours")})
+    if hours_left_drift(feed, now) != []:
+        failures.append({"control": "fresh_feed_has_no_hours_left_drift",
+                         "stale_fields": hours_left_drift(feed, now)})
+
+    undated = copy.deepcopy(feed)
+    del undated["hours_left_as_of"]
+    if not any("hours_left_as_of" in line for line in hours_left_drift(undated, now)):
+        failures.append({"control": "undated_hours_left_is_refused"})
+
+    # Clockless: checked at the snapshot's own instant, so only the row's
+    # disagreement with its own `expires` can flag it.
+    retimed = copy.deepcopy(feed)
+    retimed["jobs"][0]["hours_left"] += 1
+    if not any("does not match its own expires" in line
+               for line in hours_left_drift(retimed, now)):
+        failures.append({"control": "retimed_snapshot_is_refused_with_no_clock",
+                         "stale_fields": hours_left_drift(retimed, now)})
+
+    looser = copy.deepcopy(feed)
+    looser["hours_left_tolerance_hours"] = HOURS_LEFT_TOLERANCE_HOURS * 2
+    if not any("looser" in line for line in hours_left_drift(looser, now)):
+        failures.append({"control": "a_feed_may_not_widen_its_own_bound"})
+
+    # The board is STILL OPEN at both of these instants - `state` does not
+    # move, no aggregate moves, nothing in the tree drifts. Only the countdown
+    # is wrong, which is exactly the hole this control closes.
+    inside = now + datetime.timedelta(hours=HOURS_LEFT_TOLERANCE_HOURS - 1)
+    at_inside = check(feed, jobs, [], 0, inside)
+    if at_inside["ok"] is not True:
+        failures.append({"control": "hours_left_may_age_inside_the_bound",
+                         "reason": at_inside["reason"],
+                         "stale_fields": at_inside["stale_fields"]})
+    outside = now + datetime.timedelta(hours=HOURS_LEFT_TOLERANCE_HOURS + 2)
+    at_outside = check(feed, jobs, [], 0, outside)
+    drifted = [line for line in at_outside["stale_fields"] if "hours_left" in line]
+    if (at_outside["reason"] != "feed_stale" or not drifted
+            or at_outside["jobs_digest"] != at_outside["published_digest"]):
+        failures.append({"control": "hours_left_drifts_past_the_declared_bound",
+                         "reason": at_outside["reason"],
+                         "stale_fields": at_outside["stale_fields"]})
 
     # The board moved.
     moved = read_jobs(_control_board(price_raw="60000000000000000000000000000"))

@@ -68,7 +68,7 @@
             "state": "open"
           }
         ],
-        "now": "2026-10-24T06:05:00Z"
+        "now": "2026-10-25T05:58:46Z"
       },
       "recipe": "A job is claimable when its `state` is exactly `open` and its `expires` is strictly later than `now`, both read as RFC3339 UTC. The claim is true if at least one job satisfies both. `now` is the artifact's own generated_at, so the verdict is reproducible from this file rather than from your clock.",
       "rule": "at_least_one_open_job_has_not_expired",
@@ -81,7 +81,7 @@
         "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/jobs.json"
       ],
       "claim": "The published feed describes the published board.",
-      "equivalent_command": "python3 jobs_feed.py check --feed feed/jobs.json --jobs jobs.json --now 2026-10-24T06:05:00Z",
+      "equivalent_command": "python3 jobs_feed.py check --feed feed/jobs.json --jobs jobs.json --now 2026-10-25T05:58:46Z",
       "equivalent_command_is_optional": true,
       "falsified_by": "a digest that does not reproduce from the material",
       "id": "jobs-digest-matches",
@@ -442,7 +442,7 @@
   "claims_false_or_unproven": 0,
   "claims_measured": 10,
   "claims_total": 10,
-  "generated_at": "2026-10-24T06:05:00Z",
+  "generated_at": "2026-10-25T05:58:46Z",
   "primitives_used": [
     "blake2b-256",
     "blake2b-40",

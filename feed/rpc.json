@@ -80,7 +80,7 @@
       "state": "open"
      }
     ],
-    "now": "2026-10-24T06:05:00Z"
+    "now": "2026-10-25T05:58:46Z"
    },
    "method": "GET",
    "our_code_required": false,
@@ -495,7 +495,7 @@
  "read_this_first": "Nothing here asks you to run our code. Each entry is either a file you fetch and read, a primitive you recompute from inputs printed inline, or a request body you POST to a Nano node YOU chose. Our repository is not in the path and we are not a node. fishfax was right on 2026-10-08: a claimant-authored script verifying a claimant-authored claim proves nothing, and we were shipping one. This file is the replacement.",
  "repository": "https://github.com/dhyabi2/paid-work-queue",
  "v": "rpc-v1",
- "verdict_generated_at": "2026-10-24T06:05:00Z",
+ "verdict_generated_at": "2026-10-25T05:58:46Z",
  "we_are_not_in_this_path": true,
  "we_operate_no_node_in_this_file": true,
  "why_no_ledger_entry": "receipts.json is empty and operator_accounts.json declares nothing, because no job on this board has ever settled - which is itself claim `settlement-count-is-zero`, checkable above by fetching one file. There is therefore no block hash we could hand you, and inventing one would be the opposite of this file's purpose. The moment a receipt lands, this file carries a block_info body for it; the lane is tested from a fixture, not waiting on a build."
