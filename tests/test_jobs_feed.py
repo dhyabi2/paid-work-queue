@@ -474,6 +474,25 @@ class TheHumanPage(unittest.TestCase):
         self.assertIn("&lt;script&gt;", page)
         self.assertIn("&amp;", page)
 
+    def test_09e_an_expired_job_with_nonnegative_hours_left_says_expired(self):
+        at_expiry, _, _ = built(board(), now="2026-10-17T07:00:00Z")
+        self.assertEqual(at_expiry["jobs"][0]["state"], "expired")
+        self.assertEqual(at_expiry["jobs"][0]["hours_left"], 0)
+        page_at_expiry = render_html(at_expiry)
+        self.assertIn("&middot; expired</span>", page_at_expiry)
+        self.assertNotIn("0 hours left", page_at_expiry)
+
+        operator_expired, _, _ = built(board(state="expired"), now=NOW)
+        self.assertEqual(operator_expired["jobs"][0]["state"], "expired")
+        self.assertGreater(operator_expired["jobs"][0]["hours_left"], 0)
+        page_op_expired = render_html(operator_expired)
+        self.assertIn("&middot; expired</span>", page_op_expired)
+        self.assertNotIn("hours left", page_op_expired)
+
+        past_expiry, _, _ = built(board(), now=AFTER_EXPIRY)
+        self.assertIn("expired %d hours ago" % abs(past_expiry["jobs"][0]["hours_left"]),
+                      render_html(past_expiry))
+
 
 class ByteExactAndHermetic(unittest.TestCase):
 
