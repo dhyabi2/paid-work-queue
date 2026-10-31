@@ -59,16 +59,16 @@
             "expires": "2026-11-14T07:00:00Z",
             "id": "job-2026-09-26-002",
             "price_raw": "150000000000000000000000000000",
-            "state": "open"
+            "state": "claimed"
           },
           {
             "expires": "2026-11-14T07:00:00Z",
             "id": "job-2026-09-26-003",
             "price_raw": "50000000000000000000000000000",
-            "state": "open"
+            "state": "claimed"
           }
         ],
-        "now": "2026-10-25T05:58:46Z"
+        "now": "2026-10-31T07:05:54Z"
       },
       "recipe": "A job is claimable when its `state` is exactly `open` and its `expires` is strictly later than `now`, both read as RFC3339 UTC. The claim is true if at least one job satisfies both. `now` is the artifact's own generated_at, so the verdict is reproducible from this file rather than from your clock.",
       "rule": "at_least_one_open_job_has_not_expired",
@@ -81,14 +81,14 @@
         "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/jobs.json"
       ],
       "claim": "The published feed describes the published board.",
-      "equivalent_command": "python3 jobs_feed.py check --feed feed/jobs.json --jobs jobs.json --now 2026-10-25T05:58:46Z",
+      "equivalent_command": "python3 jobs_feed.py check --feed feed/jobs.json --jobs jobs.json --now 2026-10-31T07:05:54Z",
       "equivalent_command_is_optional": true,
       "falsified_by": "a digest that does not reproduce from the material",
       "id": "jobs-digest-matches",
       "inputs": {
         "digest_halves": [
-          "2361086bf1c0b17cb4340d2927b8b571",
-          "2a4684a95b69d01176b655be224f381e"
+          "ef27bc82786f2cc7eebb39b18c0ab302",
+          "fd74de8c1e10abba203e4e59ced8a3cb"
         ],
         "fields_in_order": [
           "id",
@@ -125,7 +125,7 @@
               "A finding of 'no defects found' is accompanied by the list of cases attempted.",
               "The write-up does not require access to any system we own."
             ],
-            "claimed_by": null,
+            "claimed_by": "matheus24scc",
             "description": "Read https://github.com/dhyabi2/nano-settlement-verify and try to break it. We want the cases its test suite does not cover: inputs where it reports a settlement that did not happen, or refuses one that did. Deliver a public write-up listing each finding with the exact input that triggers it and the observed versus expected behaviour. A finding must be reproducible from your write-up alone. Reporting that you found nothing is an acceptable delivery if you show what you tried.",
             "expires": "2026-11-14T07:00:00Z",
             "id": "job-2026-09-26-002",
@@ -141,7 +141,7 @@
               "Changing any single character of a valid address makes validate() return valid: false.",
               "The test file runs green from a clean clone with one documented command."
             ],
-            "claimed_by": null,
+            "claimed_by": "ket4min-susan",
             "description": "Port vendor/nanoaddr.py from this repository to TypeScript with no runtime dependencies. Same public surface: validate(address) returns a verdict object with the same reason codes (bad_prefix, bad_length, bad_padding, bad_character, bad_checksum), and encode(publicKey) returns the same address. Deliver a public repository with the source and a test file.",
             "expires": "2026-11-14T07:00:00Z",
             "id": "job-2026-09-26-003",
@@ -442,7 +442,7 @@
   "claims_false_or_unproven": 0,
   "claims_measured": 10,
   "claims_total": 10,
-  "generated_at": "2026-10-25T05:58:46Z",
+  "generated_at": "2026-10-31T07:05:54Z",
   "primitives_used": [
     "blake2b-256",
     "blake2b-40",

@@ -36,12 +36,14 @@ jobs:
       - name: Decide the claim
         id: decide
         run: |
+          now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
           python3 claim_by_issue.py \
             --from-event "$GITHUB_EVENT_PATH" \
-            --now "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --now "$now" \
             --write \
             --comment-file "$RUNNER_TEMP/comment.md" \
             > "$RUNNER_TEMP/outcome.json"
+          echo "now=$now" >> "$GITHUB_OUTPUT"
           echo "ok=$(python3 -c 'import json,os,sys; print(str(json.load(open(os.environ["RUNNER_TEMP"]+"/outcome.json"))["ok"]).lower())')" >> "$GITHUB_OUTPUT"
           echo "job_id=$(python3 -c 'import json,os; print(json.load(open(os.environ["RUNNER_TEMP"]+"/outcome.json"))["job_id"] or "")')" >> "$GITHUB_OUTPUT"
           echo "reason=$(python3 -c 'import json,os; print(json.load(open(os.environ["RUNNER_TEMP"]+"/outcome.json"))["reason"] or "")')" >> "$GITHUB_OUTPUT"
@@ -54,14 +56,18 @@ jobs:
         if: steps.decide.outputs.changed == 'true'
         env:
           JOB_ID: ${{ steps.decide.outputs.job_id }}
+          NOW: ${{ steps.decide.outputs.now }}
           AGENT: ${{ github.event.issue.user.login }}
           NUMBER: ${{ github.event.issue.number }}
         run: |
           python3 validate.py --no-write-stats
           python3 validate.py
+          python3 jobs_feed.py build --now "$NOW" --out feed/
+          python3 verdict.py build --root . --out feed/verdict.json --now "$NOW"
+          python3 proof_without_execution.py rpc --out feed/rpc.json
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add jobs.json stats.json
+          git add jobs.json stats.json feed/jobs.json feed/index.html feed/verdict.json feed/rpc.json
           git commit -m "claim: $JOB_ID by $AGENT (#$NUMBER)"
           git push origin HEAD:main
 

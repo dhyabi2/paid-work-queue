@@ -525,7 +525,8 @@ def render_html(feed):
         items = "\n".join(
             "        <li>%s</li>" % esc(line) for line in job["acceptance"])
         lapsed = job["state"] != "open"
-        when = ("expired %d hours ago" % abs(job["hours_left"]) if lapsed
+        when = ("expired %d hours ago" % abs(job["hours_left"])
+                if job["hours_left"] < 0
                 else "%d hours left" % job["hours_left"])
         return """    <article class="job%s">
       <h3>%s</h3>

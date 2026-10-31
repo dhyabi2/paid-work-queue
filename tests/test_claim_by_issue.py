@@ -578,6 +578,10 @@ class ParseAndApply(unittest.TestCase):
         for needed in ("issues:", "opened", "edited", "reopened",
                        "contents: write", "issues: write",
                        "claim_by_issue.py", "--from-event", "--now",
+                       "jobs_feed.py build", "verdict.py build",
+                       "proof_without_execution.py rpc",
+                       "feed/jobs.json", "feed/index.html",
+                       "feed/verdict.json", "feed/rpc.json",
                        "not-a-claim", "claim-rejected", "claimed"):
             self.assertIn(needed, workflow, needed)
         # The only secret it may use is the default token.
