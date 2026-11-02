@@ -221,8 +221,9 @@ class VerdictTest(unittest.TestCase):
     def test_9_claims_false_or_unproven_is_the_count_of_those_rows(self):
         artifact = built()
         counted = sum(1 for c in artifact["claims"]
-                      if c["verdict"] is False
-                      or c["verdict_is"] == "unproven")
+                      if not c.get("control")
+                      and (c["verdict"] is False
+                           or c["verdict_is"] == "unproven"))
         self.assertEqual(artifact["claims_false_or_unproven"], counted)
 
         # Driven by a fixture with one of each, so the equality is not
@@ -238,7 +239,7 @@ class VerdictTest(unittest.TestCase):
                 {"id": "c", "verdict": True, "verdict_is": "measured",
                  "rule": "receipts_list_is_empty",
                  "inputs": {"receipts": []}, "recipe": "count it"},
-            ],
+            ] + verdict._controls(),            # check() now demands the controls too
         }
         self.assertTrue(check(fixture)["ok"], check(fixture)["mismatches"])
         fixture["claims_false_or_unproven"] = 1

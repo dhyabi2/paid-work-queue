@@ -394,6 +394,40 @@ def _claim(claim_id, claim, verdict, kind, inputs, recipe, rule=None,
     return row
 
 
+CONTROL_NOTE = (
+    "Rows with `control: true` are deliberately false (`expected_verdict: refuted`) or deliberately unproven "
+    "(`expected_verdict: unproven`), in the same shape as the real claims. They are not counted in `claims_total` or "
+    "`claims_false_or_unproven`. If your method CONFIRMS control-false-001, your method and ours share a blind spot - "
+    "which is more useful to you than our agreement on the rest. Credit: jarvismuse asked how agreement is told from "
+    "shared blindness; this is the mechanism.")
+
+
+def _controls():
+    refuted = _claim(
+        "control-false-001",
+        "CONTROL (deliberately false): receipts.json holds no receipt.",
+        False, "measured",
+        {"receipts": [{"id": "control-receipt", "note": "a receipt that does not exist outside this control"}],
+         "claims": [], "jobs_settled": 0},
+        "Exactly as for settlement-count-is-zero: the claim is true if and only if the list under `receipts` is "
+        "empty. This control's list has one element, so the claim is false and a method that says true is wrong.",
+        rule="receipts_list_is_empty",
+        check_without_us=[RAW + "verdict.py"],
+        falsified_by="the element in `receipts` (that is the point)")
+    refuted.update(control=True, expected_verdict="refuted")
+    unproven = _claim(
+        "control-unproven-001",
+        "CONTROL (deliberately unproven): this repository will have a paying outside customer within 30 days.",
+        False, "unproven",
+        {"forecast_of": "other people's behaviour, not a state of this repository"},
+        "A forecast: no input here can establish it, so no method may report it as confirmed.",
+        check_without_us=[RAW + "verdict.py"],
+        falsified_by="nothing today; it can only be shown false after the fact",
+        why_not_measurable="a forecast about other people's behaviour")
+    unproven.update(control=True, expected_verdict="unproven")
+    return [refuted, unproven]
+
+
 def build(root, *, now):
     """The artifact. Never raises on a false claim; a false claim is a row."""
     if not isinstance(root, str) or not os.path.isdir(root):
@@ -713,9 +747,16 @@ def build(root, *, now):
                      "`signed_block_can_exist: true`",
         equivalent_command="python3 retry_safety.py table"))
 
+    # Controls (jarvismuse, 2026-10-24: "if two readers share the same method and the same blind spot, they will
+    # re-derive the same wrong answer in perfect agreement"). Same array, same shape as the real claims, flagged
+    # `control: true`. They are deliberately FALSE or deliberately UNPROVEN; a method that confirms them shares our
+    # blind spot. They are excluded from the headline counts so they cannot inflate or hide `claims_false_or_unproven`.
+    claims.extend(_controls())
+
+    real = [c for c in claims if not c.get("control")]
     measured = [c for c in claims if c["verdict_is"] == "measured"]
     asserted = [c for c in claims if c["verdict_is"] == "asserted"]
-    bad = [c for c in claims
+    bad = [c for c in real
            if c["verdict"] is False or c["verdict_is"] == "unproven"]
 
     artifact = {
@@ -725,6 +766,8 @@ def build(root, *, now):
         "read_this_first": READ_THIS_FIRST,
         "primitives_used": list(PRIMITIVES),
         "claims": claims,
+        "control_claims_note": CONTROL_NOTE,
+        "controls_total": len(claims) - len(real),
         "claims_total": len(claims),
         "claims_measured": len(measured),
         "claims_asserted": len(asserted),
@@ -845,9 +888,22 @@ def check(artifact):
                 "id": claim_id, "why": "the inputs derive %r and the artifact "
                                        "states %r" % (derived,
                                                       claim.get("verdict"))})
+    import verification_tier
+
+    def _derive(claim):
+        rule = claim.get("rule")
+        if rule not in RULES:
+            return False
+        try:
+            return bool(RULES[rule][0](claim.get("inputs") or {}))
+        except Exception:                                # noqa: BLE001
+            return False
+
+    for code, detail in verification_tier.control_problems(claims, _derive):
+        mismatches.append({"id": code, "why": detail})
     stated_false = sum(1 for c in claims
-                       if c.get("verdict") is False
-                       or c.get("verdict_is") == "unproven")
+                       if not c.get("control") and (c.get("verdict") is False
+                                                    or c.get("verdict_is") == "unproven"))
     if stated_false != artifact.get("claims_false_or_unproven"):
         mismatches.append({
             "id": "claims_false_or_unproven",
@@ -952,8 +1008,16 @@ def self_test():
         failures.append("a fabricated input was not caught")
 
     controls += 1
+    mutated = json.loads(json.dumps(artifact))
+    for row in mutated["claims"]:
+        if row.get("id") == "control-false-001":
+            row["verdict"] = True           # a method that confirms the false control shares our blind spot
+    if check(mutated)["ok"]:
+        failures.append("a confirmed control was not caught")
+    controls += 1
     counted = sum(1 for c in artifact["claims"]
-                  if c["verdict"] is False or c["verdict_is"] == "unproven")
+                  if not c.get("control")
+                  and (c["verdict"] is False or c["verdict_is"] == "unproven"))
     if counted != artifact["claims_false_or_unproven"]:
         failures.append("claims_false_or_unproven is %r and the rows count %d"
                         % (artifact["claims_false_or_unproven"], counted))

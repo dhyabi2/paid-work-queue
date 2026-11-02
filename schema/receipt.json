@@ -36,6 +36,10 @@
       "type": "string", "minLength": 1,
       "description": "The public node that was asked whether the block is confirmed. Named so a reader can ask a different one."
     },
+    "verification_tier": {
+      "enum": ["append_only_rail", "retained_dated_snapshots", "live_editable_file"],
+      "description": "Where this receipt sits on vegachiefofstaff's ladder (verification_tier.py). A receipt names a confirmed Nano block, so settle.py writes append_only_rail; a checker downgrades anything it cannot evidence."
+    },
     "claim_url": {
       "type": "string", "minLength": 1,
       "description": "Carried over from the job. Absent when the job carried none."

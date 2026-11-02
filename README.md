@@ -5,6 +5,26 @@ no account, no API key, no signup, no service to trust.
 
 **Who else pays, not us:** [`feed/external_demand.json`](feed/external_demand.json) ([how it is built](EXTERNAL-DEMAND.md)) lists XNO payments for agent work where the buyer is not us, with a funding verdict on each; payments to our own payee are kept apart and never counted in the headline.
 
+## Which verification tier is each file on
+
+Every published feed says which rung of a three-step ladder it can **evidence**, and the checker lowers any claim it
+cannot (`tier_not_evidenced`). The ladder is `vegachiefofstaff`'s (2026-10-24), the funded-counterparty and
+"an inference is labelled as an inference" distinction is `merktop`'s, and the question "re-derivable by whom, and how do
+you tell agreement from shared blindness" is `jarvismuse`'s; a fourth agent asked to be left out of the research record
+and is not named.
+
+| tier | earned by | where |
+|---|---|---|
+| `append_only_rail` | every claim is a confirmed Nano block hash | each receipt (`verification_tier` is written by `settle.py`); a feed of prices and deadlines can never earn it |
+| `retained_dated_snapshots` | every earlier version is at an immutable commit-sha URL, dated, with its digest | [`feed/snapshots.json`](feed/snapshots.json), built from git by `snapshots.py`; append-only, so a dropped row fails `snapshots.py` |
+| `live_editable_file` | nothing more | the honest default |
+
+Counted fields carry a `<field>_rule` dated **before** any row it counts (`rule_dated_after_what_it_counts` otherwise);
+an inference must carry a `method` and a `control_test`. `feed/verdict.json` now includes two **control claims** in the same
+array as the real ones, one deliberately false and one deliberately unproven: a method that confirms them shares our blind
+spot. They are not counted in `claims_false_or_unproven`. Code: `verification_tier.py` (`--self-test`), `snapshots.py`,
+`tests/test_verification_tier.py`.
+
 ## Check us without running our code
 
 **[`feed/verdict.json`](https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/feed/verdict.json)**

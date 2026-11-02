@@ -68,7 +68,7 @@
             "state": "claimed"
           }
         ],
-        "now": "2026-11-02T07:50:05Z"
+        "now": "2026-11-02T11:55:07Z"
       },
       "recipe": "A job is claimable when its `state` is exactly `open` and its `expires` is strictly later than `now`, both read as RFC3339 UTC. The claim is true if at least one job satisfies both. `now` is the artifact's own generated_at, so the verdict is reproducible from this file rather than from your clock.",
       "rule": "at_least_one_open_job_has_not_expired",
@@ -81,7 +81,7 @@
         "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/jobs.json"
       ],
       "claim": "The published feed describes the published board.",
-      "equivalent_command": "python3 jobs_feed.py check --feed feed/jobs.json --jobs jobs.json --now 2026-11-02T07:50:05Z",
+      "equivalent_command": "python3 jobs_feed.py check --feed feed/jobs.json --jobs jobs.json --now 2026-11-02T11:55:07Z",
       "equivalent_command_is_optional": true,
       "falsified_by": "a digest that does not reproduce from the material",
       "id": "jobs-digest-matches",
@@ -448,13 +448,56 @@
       "rule": "exactly_one_state_permits_a_new_send",
       "verdict": true,
       "verdict_is": "measured"
+    },
+    {
+      "check_without_us": [
+        "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/verdict.py"
+      ],
+      "claim": "CONTROL (deliberately false): receipts.json holds no receipt.",
+      "control": true,
+      "expected_verdict": "refuted",
+      "falsified_by": "the element in `receipts` (that is the point)",
+      "id": "control-false-001",
+      "inputs": {
+        "claims": [],
+        "jobs_settled": 0,
+        "receipts": [
+          {
+            "id": "control-receipt",
+            "note": "a receipt that does not exist outside this control"
+          }
+        ]
+      },
+      "recipe": "Exactly as for settlement-count-is-zero: the claim is true if and only if the list under `receipts` is empty. This control's list has one element, so the claim is false and a method that says true is wrong.",
+      "rule": "receipts_list_is_empty",
+      "verdict": false,
+      "verdict_is": "measured"
+    },
+    {
+      "check_without_us": [
+        "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/verdict.py"
+      ],
+      "claim": "CONTROL (deliberately unproven): this repository will have a paying outside customer within 30 days.",
+      "control": true,
+      "expected_verdict": "unproven",
+      "falsified_by": "nothing today; it can only be shown false after the fact",
+      "id": "control-unproven-001",
+      "inputs": {
+        "forecast_of": "other people's behaviour, not a state of this repository"
+      },
+      "recipe": "A forecast: no input here can establish it, so no method may report it as confirmed.",
+      "verdict": false,
+      "verdict_is": "unproven",
+      "why_not_measurable": "a forecast about other people's behaviour"
     }
   ],
   "claims_asserted": 0,
   "claims_false_or_unproven": 0,
-  "claims_measured": 10,
-  "claims_total": 10,
-  "generated_at": "2026-11-02T07:50:05Z",
+  "claims_measured": 11,
+  "claims_total": 12,
+  "control_claims_note": "Rows with `control: true` are deliberately false (`expected_verdict: refuted`) or deliberately unproven (`expected_verdict: unproven`), in the same shape as the real claims. They are not counted in `claims_total` or `claims_false_or_unproven`. If your method CONFIRMS control-false-001, your method and ours share a blind spot - which is more useful to you than our agreement on the rest. Credit: jarvismuse asked how agreement is told from shared blindness; this is the mechanism.",
+  "controls_total": 2,
+  "generated_at": "2026-11-02T11:55:07Z",
   "primitives_used": [
     "blake2b-256",
     "blake2b-40",

@@ -80,7 +80,7 @@
       "state": "claimed"
      }
     ],
-    "now": "2026-11-02T07:50:05Z"
+    "now": "2026-11-02T11:55:07Z"
    },
    "method": "GET",
    "our_code_required": false,
@@ -492,10 +492,61 @@
    "verdict_is": "measured",
    "verdict_we_published": true,
    "what_you_are_testing": "A new payment can be constructed in exactly one state of the retry-safety state machine, and it is the one state in which no signed block can exist - so no node's answer, 'not found' included, can authorise a second send for a request that already has one."
+  },
+  {
+   "also_fetch": [
+    "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/verdict.py"
+   ],
+   "check_kind": "published_record",
+   "claim_id": "control-false-001",
+   "entry_id": "c11-control-false-001",
+   "expect": "the recipe in `recompute_without_us` reproduces `verdict_we_published`",
+   "falsified_by": "the element in `receipts` (that is the point)",
+   "inputs": {
+    "claims": [],
+    "jobs_settled": 0,
+    "receipts": [
+     {
+      "id": "control-receipt",
+      "note": "a receipt that does not exist outside this control"
+     }
+    ]
+   },
+   "method": "GET",
+   "our_code_required": false,
+   "primitive": null,
+   "read_field": null,
+   "recompute_without_us": "Exactly as for settlement-count-is-zero: the claim is true if and only if the list under `receipts` is empty. This control's list has one element, so the claim is false and a method that says true is wrong.",
+   "url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/verdict.py",
+   "verdict_is": "measured",
+   "verdict_we_published": false,
+   "what_you_are_testing": "CONTROL (deliberately false): receipts.json holds no receipt."
+  },
+  {
+   "also_fetch": [
+    "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/verdict.py"
+   ],
+   "check_kind": "published_record",
+   "claim_id": "control-unproven-001",
+   "entry_id": "c12-control-unproven-001",
+   "expect": "the recipe in `recompute_without_us` reproduces `verdict_we_published`",
+   "falsified_by": "nothing today; it can only be shown false after the fact",
+   "inputs": {
+    "forecast_of": "other people's behaviour, not a state of this repository"
+   },
+   "method": "GET",
+   "our_code_required": false,
+   "primitive": null,
+   "read_field": null,
+   "recompute_without_us": "A forecast: no input here can establish it, so no method may report it as confirmed.",
+   "url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/verdict.py",
+   "verdict_is": "unproven",
+   "verdict_we_published": false,
+   "what_you_are_testing": "CONTROL (deliberately unproven): this repository will have a paying outside customer within 30 days."
   }
  ],
- "checks_total": 10,
- "claims_covered": 10,
+ "checks_total": 12,
+ "claims_covered": 12,
  "generated_from": "feed/verdict.json",
  "hash_printing": "Block hashes are printed in full under the field name `block_hash`. Nothing here is published in halves.",
  "ledger_entries": 0,
@@ -507,7 +558,7 @@
  "read_this_first": "Nothing here asks you to run our code. Each entry is either a file you fetch and read, a primitive you recompute from inputs printed inline, or a request body you POST to a Nano node YOU chose. Our repository is not in the path and we are not a node. fishfax was right on 2026-10-08: a claimant-authored script verifying a claimant-authored claim proves nothing, and we were shipping one. This file is the replacement.",
  "repository": "https://github.com/dhyabi2/paid-work-queue",
  "v": "rpc-v1",
- "verdict_generated_at": "2026-11-02T07:50:05Z",
+ "verdict_generated_at": "2026-11-02T11:55:07Z",
  "we_are_not_in_this_path": true,
  "we_operate_no_node_in_this_file": true,
  "why_no_ledger_entry": "receipts.json is empty and operator_accounts.json declares nothing, because no job on this board has ever settled - which is itself claim `settlement-count-is-zero`, checkable above by fetching one file. There is therefore no block hash we could hand you, and inventing one would be the opposite of this file's purpose. The moment a receipt lands, this file carries a block_info body for it; the lane is tested from a fixture, not waiting on a build."

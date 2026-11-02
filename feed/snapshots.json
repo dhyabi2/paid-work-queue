@@ -1,0 +1,235 @@
+{
+ "join_the_halves": true,
+ "snapshots": [
+  {
+   "artifact": "feed/jobs.json",
+   "bytes": 7180,
+   "commit": "39673df5f56b1128e546e2f086a15b93d6a4e614",
+   "generated_at": "2026-10-04T06:30:00Z",
+   "permalink": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/39673df5f56b1128e546e2f086a15b93d6a4e614/feed/jobs.json",
+   "sha256_halves": [
+    "f7c37a911ecbfa1d7a8bafec3b680e14",
+    "a67312b53527e0d833659091a94b1529"
+   ],
+   "superseded_at": "2026-10-05T07:47:40Z"
+  },
+  {
+   "artifact": "feed/jobs.json",
+   "bytes": 7889,
+   "commit": "66c4f9175abaab44ec01f0120d536c18f115d006",
+   "generated_at": "2026-10-05T07:47:40Z",
+   "permalink": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/66c4f9175abaab44ec01f0120d536c18f115d006/feed/jobs.json",
+   "sha256_halves": [
+    "635cc5459655574552c92c2474f180ac",
+    "f0642576f599c6c679e06a07f739712c"
+   ],
+   "superseded_at": "2026-10-08T06:39:12Z"
+  },
+  {
+   "artifact": "feed/jobs.json",
+   "bytes": 8600,
+   "commit": "70b3379e661cca9f715e404b893fb4139ae2b1a8",
+   "generated_at": "2026-10-08T06:39:12Z",
+   "permalink": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/70b3379e661cca9f715e404b893fb4139ae2b1a8/feed/jobs.json",
+   "sha256_halves": [
+    "7abc9ca7439a00c56e1eb5520073fd58",
+    "6046d0f2c799a99c1ab2cc4ff4872566"
+   ],
+   "superseded_at": "2026-10-08T06:59:30Z"
+  },
+  {
+   "artifact": "feed/jobs.json",
+   "bytes": 8993,
+   "commit": "6bafd83b5b2bdb9c5bfa777250e8a0cecbd2e36e",
+   "generated_at": "2026-10-08T06:59:30Z",
+   "permalink": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/6bafd83b5b2bdb9c5bfa777250e8a0cecbd2e36e/feed/jobs.json",
+   "sha256_halves": [
+    "8e41010263dbb41008982839d6146ee7",
+    "d4b25912ad69b74fa7901816bacc3516"
+   ],
+   "superseded_at": "2026-10-24T06:05:00Z"
+  },
+  {
+   "artifact": "feed/jobs.json",
+   "bytes": 8993,
+   "commit": "7b944b47d95492dc57ecff981e585f0beb58b8d7",
+   "generated_at": "2026-10-24T06:05:00Z",
+   "permalink": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/7b944b47d95492dc57ecff981e585f0beb58b8d7/feed/jobs.json",
+   "sha256_halves": [
+    "7d6fb7e17306d06c574024818a5d3e4e",
+    "b66360efec62d54247b4edf5fe070969"
+   ],
+   "superseded_at": "2026-10-25T05:58:40Z"
+  },
+  {
+   "artifact": "feed/jobs.json",
+   "bytes": 9681,
+   "commit": "145b51b2550b38035467bf713322dded2cce21f0",
+   "generated_at": "2026-10-25T05:58:40Z",
+   "permalink": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/145b51b2550b38035467bf713322dded2cce21f0/feed/jobs.json",
+   "sha256_halves": [
+    "ed1546d77df11c0f1e1a5c15bb2658cd",
+    "42387bb89ef1cf114015339d66e2523b"
+   ],
+   "superseded_at": "2026-11-02T07:00:00Z"
+  },
+  {
+   "artifact": "feed/jobs.json",
+   "bytes": 9708,
+   "commit": "122f78c2a47cdd4da31062e9fa460c1a28df696e",
+   "generated_at": "2026-11-02T07:00:00Z",
+   "permalink": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/122f78c2a47cdd4da31062e9fa460c1a28df696e/feed/jobs.json",
+   "sha256_halves": [
+    "c64feb02364c5d31b2b825497e7d4c24",
+    "39bde79783368d64d303e2ae05f669ed"
+   ],
+   "superseded_at": "2026-11-02T07:39:21Z"
+  },
+  {
+   "artifact": "feed/jobs.json",
+   "bytes": 10548,
+   "commit": "d1f75d85d21e7be96bcf2b36607d4376c19676e3",
+   "generated_at": "2026-11-02T07:39:21Z",
+   "permalink": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/d1f75d85d21e7be96bcf2b36607d4376c19676e3/feed/jobs.json",
+   "sha256_halves": [
+    "a2fca8099a26aec3ddd7aecbac860267",
+    "1c34dee27cd4bf59b63d11f20b1394de"
+   ],
+   "superseded_at": "2026-11-02T07:50:05Z"
+  },
+  {
+   "artifact": "feed/jobs.json",
+   "bytes": 10548,
+   "commit": "942dca0526253dccd08439bede44009ddf4c4e2f",
+   "generated_at": "2026-11-02T07:50:05Z",
+   "permalink": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/942dca0526253dccd08439bede44009ddf4c4e2f/feed/jobs.json",
+   "sha256_halves": [
+    "424ffce7045918c76fd55973920a343d",
+    "a413e37e424156ec1e9e7e6d6e862592"
+   ],
+   "superseded_at": null
+  },
+  {
+   "artifact": "feed/verdict.json",
+   "bytes": 21001,
+   "commit": "6bafd83b5b2bdb9c5bfa777250e8a0cecbd2e36e",
+   "generated_at": "2026-10-08T06:59:30Z",
+   "permalink": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/6bafd83b5b2bdb9c5bfa777250e8a0cecbd2e36e/feed/verdict.json",
+   "sha256_halves": [
+    "c9e695596d84fd7cf37663ec1246a2a8",
+    "5b9101c4cd2df40f845a0d684949bb42"
+   ],
+   "superseded_at": "2026-10-08T08:13:58Z"
+  },
+  {
+   "artifact": "feed/verdict.json",
+   "bytes": 24653,
+   "commit": "02109841041ec4f5de15d48344dd33891ada769c",
+   "generated_at": "2026-10-08T08:13:58Z",
+   "permalink": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/02109841041ec4f5de15d48344dd33891ada769c/feed/verdict.json",
+   "sha256_halves": [
+    "4e4d3f15e063d98ef933fb0f605eba03",
+    "dff94fb2a1a0da3bb04cdfd5c508d5d4"
+   ],
+   "superseded_at": "2026-10-11T12:58:41Z"
+  },
+  {
+   "artifact": "feed/verdict.json",
+   "bytes": 24679,
+   "commit": "348621416d114183490fca0e0cd1ae4c7d2a1ccb",
+   "generated_at": "2026-10-11T12:58:41Z",
+   "permalink": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/348621416d114183490fca0e0cd1ae4c7d2a1ccb/feed/verdict.json",
+   "sha256_halves": [
+    "00ad47d38111b613726e0cc0c8ecaec4",
+    "47ee1c78c983f3397da052a44c083f16"
+   ],
+   "superseded_at": "2026-10-24T06:05:00Z"
+  },
+  {
+   "artifact": "feed/verdict.json",
+   "bytes": 24679,
+   "commit": "7b944b47d95492dc57ecff981e585f0beb58b8d7",
+   "generated_at": "2026-10-24T06:05:00Z",
+   "permalink": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/7b944b47d95492dc57ecff981e585f0beb58b8d7/feed/verdict.json",
+   "sha256_halves": [
+    "e94abbd440c553620eda27fd086d93d8",
+    "95ce083bb295c4f0821fd6ad87323920"
+   ],
+   "superseded_at": "2026-10-25T05:58:46Z"
+  },
+  {
+   "artifact": "feed/verdict.json",
+   "bytes": 24679,
+   "commit": "145b51b2550b38035467bf713322dded2cce21f0",
+   "generated_at": "2026-10-25T05:58:46Z",
+   "permalink": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/145b51b2550b38035467bf713322dded2cce21f0/feed/verdict.json",
+   "sha256_halves": [
+    "584cd8bab6624b0197108ccf25d976cd",
+    "7a5ffcd5fdfb391beb9b1d63acfe7603"
+   ],
+   "superseded_at": "2026-11-02T07:00:00Z"
+  },
+  {
+   "artifact": "feed/verdict.json",
+   "bytes": 24706,
+   "commit": "122f78c2a47cdd4da31062e9fa460c1a28df696e",
+   "generated_at": "2026-11-02T07:00:00Z",
+   "permalink": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/122f78c2a47cdd4da31062e9fa460c1a28df696e/feed/verdict.json",
+   "sha256_halves": [
+    "2069595d9aa68a76b0bac610c49af5ea",
+    "a8cb9b8927c70e637d39aed05479a095"
+   ],
+   "superseded_at": "2026-11-02T07:39:21Z"
+  },
+  {
+   "artifact": "feed/verdict.json",
+   "bytes": 25063,
+   "commit": "d1f75d85d21e7be96bcf2b36607d4376c19676e3",
+   "generated_at": "2026-11-02T07:39:21Z",
+   "permalink": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/d1f75d85d21e7be96bcf2b36607d4376c19676e3/feed/verdict.json",
+   "sha256_halves": [
+    "6a2079d5db3a5093cb4c74571dd3013b",
+    "9eb1476b9c1a2ae425fd6881d28e09e4"
+   ],
+   "superseded_at": "2026-11-02T07:50:05Z"
+  },
+  {
+   "artifact": "feed/verdict.json",
+   "bytes": 25063,
+   "commit": "942dca0526253dccd08439bede44009ddf4c4e2f",
+   "generated_at": "2026-11-02T07:50:05Z",
+   "permalink": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/942dca0526253dccd08439bede44009ddf4c4e2f/feed/verdict.json",
+   "sha256_halves": [
+    "2f047b9edd58575a372a6ff773b5842d",
+    "b1a4f6c536f0d92c7ad2f28d79bf3afa"
+   ],
+   "superseded_at": null
+  },
+  {
+   "artifact": "feed/acceptances.json",
+   "bytes": 1663,
+   "commit": "852e2be90ee4850b6ef0f7f0e87319bc43b5b610",
+   "generated_at": "2026-10-09T06:00:00Z",
+   "permalink": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/852e2be90ee4850b6ef0f7f0e87319bc43b5b610/feed/acceptances.json",
+   "sha256_halves": [
+    "16985de5a403ba9e8b4a2b4aa95d43ab",
+    "85093aaea73b2837e947b6f4bf71f3e5"
+   ],
+   "superseded_at": null
+  },
+  {
+   "artifact": "feed/offers.json",
+   "bytes": 3183,
+   "commit": "70b3379e661cca9f715e404b893fb4139ae2b1a8",
+   "generated_at": "2026-10-08T06:45:11Z",
+   "permalink": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/70b3379e661cca9f715e404b893fb4139ae2b1a8/feed/offers.json",
+   "sha256_halves": [
+    "9f2edf14e32fb5c7d8dc4c2ef902d94a",
+    "cc7af175a79799a512bd121249b5d738"
+   ],
+   "superseded_at": null
+  }
+ ],
+ "v": "snapshots-v1",
+ "why": "The retention policy, published. Every row is a past version of a tracked artifact at an immutable commit URL. Rows are derived from git history; this file may gain rows and fill `superseded_at`, never lose or retime one."
+}

@@ -461,6 +461,16 @@ def check_receipts(document):
         else:
             hashes.setdefault(block_hash, []).append(receipt_id)
 
+        claimed_tier = receipt.get("verification_tier")
+        if claimed_tier is not None:
+            import verification_tier
+            if claimed_tier not in verification_tier.LADDER:
+                errors.append("%s: 'verification_tier' %r is not one of %s"
+                              % (where, claimed_tier, ", ".join(verification_tier.LADDER)))
+            elif (verification_tier.rank(claimed_tier) < verification_tier.rank(verification_tier.receipt_tier(receipt))):
+                errors.append("%s: claims verification_tier %s but is not a confirmed block (tier_not_evidenced)"
+                              % (where, claimed_tier))
+
         if _rfc3339(receipt.get("settled_at")) is None:
             errors.append(
                 "%s: 'settled_at' is not an RFC3339 UTC timestamp: %r"

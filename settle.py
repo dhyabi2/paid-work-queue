@@ -370,6 +370,8 @@ def build_receipt(job, job_id, address, block_hash, node_url, delivery_url,
         "verify": EXPLORER,
         "node_queried": node_url,
         "delivery_url": delivery_url,
+        # The strongest rung of the ladder: the claim IS a confirmed block on a rail neither side controls.
+        "verification_tier": "append_only_rail",
     }
     claim_url = job.get("claim_url")
     if isinstance(claim_url, str) and claim_url:

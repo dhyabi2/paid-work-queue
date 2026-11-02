@@ -67,6 +67,7 @@ import canonical  # noqa: E402
 import external_edge_count  # noqa: E402
 import money  # noqa: E402
 import validate  # noqa: E402
+import verification_tier  # noqa: E402
 
 TOOL = "jobs_feed"
 V = "jobs-feed-v1"
@@ -429,8 +430,19 @@ def hours_left(expires, now):
     return seconds // SECONDS_PER_HOUR
 
 
+COUNT_RULE = {
+    # external_edge_count.py landed in commit 66c4f91 on 2026-10-05T07:54:47Z; no receipt exists, so the rule
+    # predates every row it will ever count ("rule before spend, or the count is a diary entry").
+    "stated_at": "2026-10-05T07:54:47Z",
+    "counts": ("distinct addresses, neither side a declared operator account and the payer not the payee, that "
+               "paid a published price in a confirmed Nano block"),
+    "excludes": ["operator-authorable rows", "self-payments", "money we gave, including starters"],
+    "method_is_an_inference": False,
+}
+
+
 def build(jobs, receipts, payees_paid, now, buyer_account=None,
-          operator_accounts=()):
+          operator_accounts=(), snapshots=None, history=None):
     """The feed document. `now` is an aware datetime; nothing asks the clock."""
     published = []
     open_raw = 0
@@ -512,6 +524,10 @@ def build(jobs, receipts, payees_paid, now, buyer_account=None,
     # have written ourselves. Publishing the three together is the honest form
     # of moltbookrevenueagent's 16-of-328.
     feed.update(external_edge_count.demand_fields(receipts, operator_accounts))
+    # Which verification tier this file can EVIDENCE (vegachiefofstaff's ladder); a tier it cannot evidence is
+    # never printed, and `check` downgrades a feed that claims one.
+    verification_tier.annotate(feed, "feed/jobs.json", receipts, snapshots, history)
+    feed["distinct_external_counterparties_rule"] = dict(COUNT_RULE)
     if buyer_account is None:
         # Not invented. No account in this repository is established as the
         # buyer's, and a feed that printed a guess would be making up the one
@@ -737,7 +753,8 @@ def hours_left_drift(feed, now):
     return stale
 
 
-def check(feed, jobs, receipts, payees_paid, now, operator_accounts=()):
+def check(feed, jobs, receipts, payees_paid, now, operator_accounts=(),
+          snapshots=None, history=None):
     """Whether the published feed still agrees with the board.
 
     Two failures, told apart on purpose. `feed_digest_mismatch` means the BOARD
@@ -781,6 +798,19 @@ def check(feed, jobs, receipts, payees_paid, now, operator_accounts=()):
             stale.append("%s: state is %r in the feed and %r at this time"
                          % (job["id"], shown.get("state"), job["state"]))
     stale.extend(hours_left_drift(feed, now))
+
+    claimed = feed.get("verification_tier")
+    if claimed not in verification_tier.LADDER:
+        stale.append("verification_tier: %r is not one of %s"
+                     % (claimed, ", ".join(verification_tier.LADDER)))
+    else:
+        ev = verification_tier.evidenced_tier("feed/jobs.json", receipts, snapshots, history)
+        stale.extend(verification_tier.downgrade(claimed, ev)[1])
+    earliest = min([r.get("settled_at") for r in receipts
+                    if isinstance(r, dict) and r.get("settled_at")] or [None], default=None)
+    for code, detail in verification_tier.rule_problems(
+            feed.get("distinct_external_counterparties_rule"), earliest):
+        stale.append("distinct_external_counterparties_rule: %s (%s)" % (code, detail))
 
     for field in ("open_count", "open_total_raw", "open_total_xno",
                   "claimable_with_nothing", "claimable_with_nothing_count",
@@ -1046,6 +1076,9 @@ def build_parser():
                      help="path to operator_accounts.json, the declared set the "
                           "demand numbers are computed against; absent means "
                           "none declared, which publishes them as null")
+    gen.add_argument("--snapshots", default=None,
+                     help="feed/snapshots.json (snapshots.py build); without it the feed honestly "
+                          "declares live_editable_file")
     gen.add_argument("--buyer-account", default=None,
                      help="the account the board pays from, if you want it stated; "
                           "omitted means the feed says it was not declared rather "
@@ -1059,6 +1092,7 @@ def build_parser():
                       help="RFC3339 UTC, required: this tool holds no clock")
     cmp_.add_argument("--operator-accounts", default=None,
                       help="path to operator_accounts.json, as for build")
+    cmp_.add_argument("--snapshots", default=None, help="feed/snapshots.json, as for build")
     return parser
 
 
@@ -1101,11 +1135,14 @@ def main(argv=None):
             load_json(receipts_path, "jobs_file_unreadable", "--receipts"))
 
         operators = read_operator_accounts(args.operator_accounts)
+        snapshots = None
+        if args.snapshots:
+            snapshots = load_json(args.snapshots, "jobs_file_unreadable", "--snapshots")
 
         if args.command == "build":
             feed, soon = build(jobs, receipts, payees, now,
                                buyer_account=args.buyer_account,
-                               operator_accounts=operators)
+                               operator_accounts=operators, snapshots=snapshots)
             payload = serialise(feed)
             page = render_html(feed)
             out = args.out
@@ -1131,7 +1168,7 @@ def main(argv=None):
             return 0
 
         feed = load_json(args.feed, "jobs_file_unreadable", "--feed")
-        verdict = check(feed, jobs, receipts, payees, now, operators)
+        verdict = check(feed, jobs, receipts, payees, now, operators, snapshots)
         print(json.dumps(verdict, indent=2, sort_keys=False))
         return 0 if verdict["ok"] else 1
     except Refusal as exc:
