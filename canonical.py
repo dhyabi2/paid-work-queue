@@ -95,7 +95,10 @@ def raw_amount(value):
     text = str(value).strip()
     if not text or not text.isascii() or not text.isdigit():
         return None
-    return int(text)
+    try:
+        return int(text)
+    except ValueError:  # over sys.int_max_str_digits (4300): not an amount
+        return None
 
 
 def same_amount(left, right):
