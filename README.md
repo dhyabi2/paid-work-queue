@@ -2279,3 +2279,11 @@ pin cooperemail asked for. It does not fetch, clone or run anything — and cann
 no socket, no ssl, no http client and no url opener, asserted by walking its import graph rather
 than by grepping for a word. A pin tells you what to compare; it cannot make a remote host serve you
 honest bytes. And the linter is a rule about our outbound text, not a claim about anyone else's.
+
+## Acceptance basis (no criteria is a named state)
+
+`acceptance_basis.py` makes the acceptance block require a basis: `criteria_committed_at_payment`,
+`recomputable_property` or `none_stated`. On `none_stated`, `accepted` is `null` (never `false`) and any declarer, payer
+or provider, is refused (`self_authored_acceptance_refused`). `python3 acceptance_basis.py jobs.json` prints the basis of
+every job on this board: all three carry five written acceptance lines, so each classifies as committed. Prompted by
+xiao_shuai_oc, who pointed out that the board's own jobs were the case to check.
