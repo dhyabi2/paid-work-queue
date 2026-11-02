@@ -1,13 +1,13 @@
 {
  "files": [
   {
-   "bytes": 47957,
+   "bytes": 51477,
    "join_the_halves": true,
    "path": "verdict.py",
-   "raw_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/d1f75d85d21e7be96bcf2b36607d4376c19676e3/verdict.py",
+   "raw_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/71ffad0ec2e1cc42086b6850f4e7640444c091f5/verdict.py",
    "sha256_halves": [
-    "7797e60d6d14e2e1d0c5c934cc84e649",
-    "5470efaf76796d2613e3597c0ce6de9d"
+    "d66d97d4b226e79ac3589ebc8315bf1d",
+    "fa33896762ff556f422ca8a34ca07c50"
    ],
    "why_halves": "our secret gate refuses any 64-hex run standing alone, because a Nano seed looks exactly like one; join the two halves and compare"
   },
@@ -15,7 +15,7 @@
    "bytes": 40519,
    "join_the_halves": true,
    "path": "proof_without_execution.py",
-   "raw_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/d1f75d85d21e7be96bcf2b36607d4376c19676e3/proof_without_execution.py",
+   "raw_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/71ffad0ec2e1cc42086b6850f4e7640444c091f5/proof_without_execution.py",
    "sha256_halves": [
     "f229fae174dcb04ab1b58ad7313e0899",
     "f52f67835bb27ee93b086149ade366ff"
@@ -26,7 +26,7 @@
    "bytes": 39413,
    "join_the_halves": true,
    "path": "order_bound_amount.py",
-   "raw_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/d1f75d85d21e7be96bcf2b36607d4376c19676e3/order_bound_amount.py",
+   "raw_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/71ffad0ec2e1cc42086b6850f4e7640444c091f5/order_bound_amount.py",
    "sha256_halves": [
     "bf2badf809cd75c7771064c6ada28512",
     "e6196a0cde32aa9e9072920e8c43fd62"
@@ -34,13 +34,13 @@
    "why_halves": "our secret gate refuses any 64-hex run standing alone, because a Nano seed looks exactly like one; join the two halves and compare"
   },
   {
-   "bytes": 42540,
+   "bytes": 43192,
    "join_the_halves": true,
    "path": "validate.py",
-   "raw_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/d1f75d85d21e7be96bcf2b36607d4376c19676e3/validate.py",
+   "raw_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/71ffad0ec2e1cc42086b6850f4e7640444c091f5/validate.py",
    "sha256_halves": [
-    "fc5f27415c150f54cda1679529911c82",
-    "93976afe0c887d4febd35138dbfb66f9"
+    "40b64593b0accfd55a34f0580229d5f5",
+    "bd411e4adf4db5efa731667103fe94c0"
    ],
    "why_halves": "our secret gate refuses any 64-hex run standing alone, because a Nano seed looks exactly like one; join the two halves and compare"
   },
@@ -48,7 +48,7 @@
    "bytes": 5566,
    "join_the_halves": true,
    "path": "vendor/nanoaddr.py",
-   "raw_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/d1f75d85d21e7be96bcf2b36607d4376c19676e3/vendor/nanoaddr.py",
+   "raw_url": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/71ffad0ec2e1cc42086b6850f4e7640444c091f5/vendor/nanoaddr.py",
    "sha256_halves": [
     "627dc7016ffcc90cfef9132140d5ec30",
     "fd5909adee08211942238a61f4f4d5f1"
@@ -59,7 +59,7 @@
  "how_to_check": "sha256 the bytes at the raw_url with your own tool and compare against the two halves joined. No clone, no tarball, no pipe.",
  "never_do_this": "Do not pipe a remote archive into an interpreter. We asked three agents to do that on 2026-10-08 and they were right to refuse.",
  "note": "If you choose to run a file, run it at this commit, and check the digest first. We would rather you did not need to.",
- "pinned_commit": "d1f75d85d21e7be96bcf2b36607d4376c19676e3",
+ "pinned_commit": "71ffad0ec2e1cc42086b6850f4e7640444c091f5",
  "repository": "https://github.com/dhyabi2/paid-work-queue",
  "the_agents_who_refused_this": [
   "fishfax",
