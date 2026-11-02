@@ -535,6 +535,11 @@ def cross_check(jobs_document, receipts_document):
             )
 
     for receipt in receipts:
+        # A receipt for a second payment against a claim on someone else's board (foreign_claim.py) names the
+        # foreign claim, not a job of ours; it is recognised by `foreign_claim_id` equal to its `job_id`.
+        if isinstance(receipt, dict) and receipt.get("foreign_claim_id") and \
+                receipt.get("foreign_claim_id") == receipt.get("job_id"):
+            continue
         if isinstance(receipt, dict) and receipt.get("job_id") not in job_ids:
             errors.append(
                 "receipts.json: %s names job %r, which is not in jobs.json"
@@ -619,6 +624,40 @@ def receipts_at_ref(ref, root, path="receipts.json"):
 # --------------------------------------------------------------------------
 
 OFFERS_FILE = "offers.json"
+FOREIGN_FILE = "foreign_claims.json"
+FOREIGN_IMMUTABLE = ("id", "board_url", "claim_url", "claim_host", "worker_handle", "work_url", "their_settlement",
+                     "recorded_at", "our_settlement", "changes_their_state_machine")
+FOREIGN_ORDER = ("recorded", "addressed", "authorised", "settled")
+
+
+def check_foreign_append_only(old_document, new_document):
+    """foreign_claims.json is append-only like receipts.json: a row never disappears, its identity fields never
+    change, its state only moves forward, and an address once recorded is only ever replaced through history."""
+    errors = []
+    old = old_document.get("foreign_claims") if isinstance(old_document, dict) else None
+    new = new_document.get("foreign_claims") if isinstance(new_document, dict) else None
+    if not isinstance(old, list):
+        return errors
+    if not isinstance(new, list):
+        return ["foreign_claims.json: 'foreign_claims' must be a list"]
+    by_id = {r.get("id"): r for r in new if isinstance(r, dict)}
+    for row in old:
+        now = by_id.get(row.get("id"))
+        if now is None:
+            errors.append("foreign_claims.json: %s was removed" % row.get("id"))
+            continue
+        for field in FOREIGN_IMMUTABLE:
+            if row.get(field) != now.get(field):
+                errors.append("foreign_claims.json: %s.%s was edited" % (row.get("id"), field))
+        if row.get("state") in FOREIGN_ORDER and now.get("state") in FOREIGN_ORDER and \
+                FOREIGN_ORDER.index(now["state"]) < FOREIGN_ORDER.index(row["state"]):
+            errors.append("foreign_claims.json: %s moved backwards %s -> %s"
+                          % (row.get("id"), row["state"], now["state"]))
+        if row.get("receipt_id") and row.get("receipt_id") != now.get("receipt_id"):
+            errors.append("foreign_claims.json: %s.receipt_id was changed" % row.get("id"))
+        if len(now.get("payout_address_history") or []) < len(row.get("payout_address_history") or []):
+            errors.append("foreign_claims.json: %s lost address history" % row.get("id"))
+    return errors
 
 # The offers vocabulary is restated here rather than imported, and the reason is
 # an import-graph rule this file is downstream of. `settle.py` imports this
@@ -893,6 +932,17 @@ def run(root, base_ref=None, write_stats=True, out=sys.stdout, now=None):
             print("note: no receipts.json at %s; append-only check skipped" % base_ref, file=out)
         else:
             errors.extend(check_append_only(previous, receipts_document))
+        foreign_path = os.path.join(root, FOREIGN_FILE)
+        if os.path.exists(foreign_path):
+            try:
+                with open(foreign_path, "r", encoding="utf-8") as handle:
+                    foreign_document = json.load(handle)
+            except (OSError, ValueError) as exc:
+                errors.append("%s: cannot be read (%s)" % (FOREIGN_FILE, exc))
+            else:
+                previous_foreign = receipts_at_ref(base_ref, root, FOREIGN_FILE)
+                if previous_foreign is not None:
+                    errors.extend(check_foreign_append_only(previous_foreign, foreign_document))
         if offers_document is not None:
             previous_offers = receipts_at_ref(base_ref, root, OFFERS_FILE)
             if previous_offers is None:

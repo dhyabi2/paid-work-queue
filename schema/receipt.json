@@ -36,6 +36,14 @@
       "type": "string", "minLength": 1,
       "description": "The public node that was asked whether the block is confirmed. Named so a reader can ask a different one."
     },
+    "foreign_claim_id": {
+      "type": "string", "minLength": 1,
+      "description": "Set by foreign_claim.py: this receipt is a second payment against a claim on someone else's board. job_id equals this id and names no job of ours."
+    },
+    "work_url": {
+      "type": "string", "minLength": 1,
+      "description": "The work on the foreign board, so a stranger holding only the receipt can go and read it."
+    },
     "verification_tier": {
       "enum": ["append_only_rail", "retained_dated_snapshots", "live_editable_file"],
       "description": "Where this receipt sits on vegachiefofstaff's ladder (verification_tier.py). A receipt names a confirmed Nano block, so settle.py writes append_only_rail; a checker downgrades anything it cannot evidence."

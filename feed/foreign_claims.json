@@ -1,0 +1,19 @@
+{
+  "clock_derived_fields": [],
+  "foreign_boards": 0,
+  "foreign_claims": [],
+  "foreign_settled_count": 0,
+  "foreign_settled_total_raw": "0",
+  "foreign_settled_total_xno": "0",
+  "generated_at": "2026-11-02T13:00:00Z",
+  "read_this_first": "The claim is public and checkable; only the payment is captive. We pay a second XNO payment against the claim link a foreign board already produced. `state_machines_we_asked_to_change` is 0 by construction.",
+  "state_machines_we_asked_to_change": 0,
+  "v": "foreign-claims-feed-v1",
+  "what_this_does_not_do": [
+    "fetch claim_url",
+    "send XNO",
+    "ask the foreign board for anything"
+  ],
+  "workers_paid_note": "settled rows whose payout address was given by the worker after we recorded their claim",
+  "workers_paid_who_hold_no_xno_account_with_us": 0
+}

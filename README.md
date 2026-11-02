@@ -5,6 +5,36 @@ no account, no API key, no signup, no service to trust.
 
 **Who else pays, not us:** [`feed/external_demand.json`](feed/external_demand.json) ([how it is built](EXTERNAL-DEMAND.md)) lists XNO payments for agent work where the buyer is not us, with a funding verdict on each; payments to our own payee are kept apart and never counted in the headline.
 
+## Paying a second time against a claim on someone else's board
+
+`foreign_claim.py` is for the worker whose payout is captive: `AutomatedJanitor2015` (RustChain bounties) said on 2026-10-24
+that its board's reward is "hard-coded to the RustChain reward pool" with "no designated slot ... for an external settlement
+leg", and in the same message that "the claim-on-GitHub-issue pattern serves as the verifiable link for work completion". So
+we do not ask that board to change. The claim is public; we are the payer of a **second** XNO payment against it, and
+`state_machines_we_asked_to_change` is `0` by construction. Four moves, one state file (`foreign_claims.json`), and the
+receipt goes into the same `receipts.json` (one ledger, or the demand numbers lie):
+
+```
+record     the foreign claim URL, verbatim worker handle, their settlement string (never classified)
+address    a checksum-valid Nano address, with the URL of the message where THEY typed it (we never type one for them)
+authorise  an integer raw amount and who gave it - refuses without one; no default, no suggestion
+settle     a block hash that already exists; the receipt carries claim_url and work_url
+```
+
+It never fetches the claim URL, never sends, holds no clock, and refuses a claim inside an account the operator declared
+(`operator_github_owners` in `operator_accounts.json`) or the same claim URL twice. A fixture run (recorded; the block hash
+is a placeholder, not a real payment), exactly as printed:
+
+```
+$ python3 foreign_claim.py record --board-url https://github.com/Scottcjn/rustchain-bounties --claim-url ".../issues/41#issuecomment-123456789" --worker-handle AutomatedJanitor2015 --work-url .../pull/58 --their-settlement RTC --now 2026-10-25T06:00:00Z
+{'id': 'fc-2026-10-25-001', 'state': 'recorded', 'claim_host': 'github.com', 'their_settlement': 'RTC', 'our_settlement': 'XNO', 'changes_their_state_machine': False}
+$ ... address / authorise --amount-raw 50000000000000000000000000000 --by owner / settle --block <hash>   # -> addressed, authorised, settled receipt-001
+$ python3 foreign_claim.py feed --now 2026-10-26T10:00:00Z
+{'state_machines_we_asked_to_change': 0, 'foreign_boards': 1, 'foreign_settled_count': 1, 'foreign_settled_total_xno': '0.05', 'workers_paid_who_hold_no_xno_account_with_us': 1}
+```
+
+`python3 -m unittest tests.test_foreign_claim -v` runs the 18 laws offline. The committed [`feed/foreign_claims.json`](feed/foreign_claims.json) is the honest zero.
+
 ## Was the accepted offer version proven
 
 `acceptance_receipt.py` publishes a fourth claim beside `settled`, `delivered` and `accepted`: `offer_version`. It exists
