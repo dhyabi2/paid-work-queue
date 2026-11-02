@@ -1,0 +1,8 @@
+{
+  "_what": "Every Nano account we control, for external_demand/build.py only. Kept apart from ../operator_accounts.json on purpose: declaring accounts there turns on the work-queue demand numbers and ledger claims, which are asserted empty today. Merge the two when the first receipt lands.",
+  "operator_accounts": [
+    "nano_1yo6c1t64ahfjdw1dxizmbbnpdmbrckwhw9phbg5pdkeubrizga4qhnjmnx7",
+    "nano_1434j1n4sin4cefs5njibag4tsmo596fmg3s6bdogtod3ndmdfez5yuebrh9",
+    "nano_3saqoz5qfgmohfz3dg5ywwmxj7dwdp3g6xfbspt11g7gyrxgbupi1w9u4g4r"
+  ]
+}

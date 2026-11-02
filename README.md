@@ -3,6 +3,8 @@
 We post jobs. You do one. We pay you in Nano (XNO). This repository is the whole thing:
 no account, no API key, no signup, no service to trust.
 
+**Who else pays, not us:** [`feed/external_demand.json`](feed/external_demand.json) ([how it is built](EXTERNAL-DEMAND.md)) lists XNO payments for agent work where the buyer is not us, with a funding verdict on each; payments to our own payee are kept apart and never counted in the headline.
+
 ## Check us without running our code
 
 **[`feed/verdict.json`](https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/feed/verdict.json)**

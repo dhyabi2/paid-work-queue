@@ -1,0 +1,66 @@
+{
+  "built_from": [
+    "https://rpc.nano.to",
+    "https://node.somenano.com/proxy"
+  ],
+  "counts": {
+    "dispenser_funded": 1,
+    "distinct_payers_not_us": 1,
+    "payer_published": 0,
+    "rows": 1,
+    "sponsor_funded": 0,
+    "unsubsidised": 0,
+    "xno_total": "0.1"
+  },
+  "excluded": [],
+  "generated_at": "2026-11-02T07:49:12Z",
+  "our_own_receipts": [
+    {
+      "amount_raw": "500000000000000000000000000",
+      "amount_xno": "0.0005",
+      "block_hash": "B749B757EE750FC9AEA72F33CB429EACCD2ABEC9F2CCF59BF17AFAC304C9A58F",
+      "check_it_yourself": "curl -s -X POST https://rpc.nano.to -H 'Content-Type: application/json' -A 'Mozilla/5.0' -d '{\"action\":\"block_info\",\"json_block\":\"true\",\"hash\":\"<block_hash>\"}'  # replace <block_hash> with this row's block_hash",
+      "nodes_read": [
+        "https://rpc.nano.to",
+        "https://node.somenano.com/proxy"
+      ],
+      "paid_at": "2026-09-23T07:55:10Z",
+      "payee": "nano_1yo6c1t64ahfjdw1dxizmbbnpdmbrckwhw9phbg5pdkeubrizga4qhnjmnx7",
+      "payer": "nano_3m8cz87zwxb1y16ob4bzp1eyek78qaig8ktohk7d45b18sh6u9exbowbnekr",
+      "payer_published": "https://github.com/dhyabi2/swarm-proof/blob/main/arion-the-colony.md",
+      "provenance": "dispenser_funded",
+      "provenance_disclosures": [
+        "nano_1434j1n4sin4cefs5njibag4tsmo596fmg3s6bdogtod3ndmdfez5yuebrh9 funded the payer in the window as dispenser_funded (received_raw 10000000000000000000000000, 1 ppm of the window's receives)"
+      ],
+      "we_are_a_party": true,
+      "what": "one paid API call at a listed price (0.0005 XNO); the seller's x402 document was not reachable on 2026-11-02, so no source is cited",
+      "what_source": null
+    }
+  ],
+  "rows": [
+    {
+      "amount_raw": "100000000000000000000000000000",
+      "amount_xno": "0.1",
+      "block_hash": "4CC32831F1D4C59EEA56C4462D1E485CC8AF970AF017E0C984CDABA187602BA1",
+      "check_it_yourself": "curl -s -X POST https://rpc.nano.to -H 'Content-Type: application/json' -A 'Mozilla/5.0' -d '{\"action\":\"block_info\",\"json_block\":\"true\",\"hash\":\"<block_hash>\"}'  # replace <block_hash> with this row's block_hash",
+      "nodes_read": [
+        "https://rpc.nano.to",
+        "https://node.somenano.com/proxy"
+      ],
+      "paid_at": "2026-10-10T15:05:02Z",
+      "payee": "nano_3m7fnaamwmfeui4u8ugwq3wfjcad67d3nhh5itqqr4z5g6hpxrawsqoc9ycc",
+      "payer": "nano_11kh65hyny1qtgkmzbpg1nzfujjjz8u8ieknpnbga97jmyfqtuz5h4q4qiux",
+      "payer_published": null,
+      "provenance": "dispenser_funded",
+      "provenance_disclosures": [
+        "nano_3mupjcyz71n99q4f7opr5jh69bbc1mc7afagweqfugmyawse8gdo88sd3k79 funded the payer in the window as dispenser_funded (received_raw 1187153978393973503036514893825, 269 ppm of the window's receives)",
+        "nano_3doesydh8enax9wtsoqng7ucics1jb6fwcate35z4iket5tk9tgwzpf1t5px funded the payer in the window as dispenser_funded (received_raw 10000000000000000000000000000, 2 ppm of the window's receives)"
+      ],
+      "we_are_a_party": false,
+      "what": "payment of 0.1 XNO to processor invoice 3m7fnaam, which forwarded to a merchant (nano_1fd9a71o...) whose goods are not identified",
+      "what_source": null
+    }
+  ],
+  "this_is_not": "a claim that these buyers will buy from you, or that they found their sellers through us",
+  "v": "external-demand-v1"
+}

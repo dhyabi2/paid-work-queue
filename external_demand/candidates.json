@@ -1,0 +1,16 @@
+{
+  "candidates": [
+    {
+      "block_hash": "4CC32831F1D4C59EEA56C4462D1E485CC8AF970AF017E0C984CDABA187602BA1",
+      "what": "payment of 0.1 XNO to processor invoice 3m7fnaam, which forwarded to a merchant (nano_1fd9a71o...) whose goods are not identified",
+      "what_source": null,
+      "payer_published": null
+    },
+    {
+      "block_hash": "B749B757EE750FC9AEA72F33CB429EACCD2ABEC9F2CCF59BF17AFAC304C9A58F",
+      "what": "one paid API call at a listed price (0.0005 XNO); the seller's x402 document was not reachable on 2026-11-02, so no source is cited",
+      "what_source": null,
+      "payer_published": "https://github.com/dhyabi2/swarm-proof/blob/main/arion-the-colony.md"
+    }
+  ]
+}
