@@ -278,6 +278,7 @@ class TestTheQuantumCheckInValidate(unittest.TestCase):
             "claimed_by": None,
             "claim_url": None,
             "receipt_id": None,
+            "entry_requirements": ["public_publication"],
         }
         job.update(overrides)
         return job

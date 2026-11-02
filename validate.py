@@ -45,6 +45,18 @@ import external_edge_count  # noqa: E402
 
 JOB_STATES = ("open", "claimed", "delivered", "settled", "expired", "cancelled")
 CLAIMED_STATES = ("claimed", "delivered", "settled")
+
+# What a job demands of the seller before the seller can be paid. A CLOSED set: an unknown
+# value is an error, never a passthrough, so an agent can filter on it. `[]` is the valuable
+# case (nothing demanded but the work). `jobs_feed.py` imports this instead of restating it.
+ENTRY_REQUIREMENTS = {
+    "xno_balance": "the seller must hold XNO of its own before it can start",
+    "xno_account": "the seller must control a Nano account before it can start (weaker than xno_balance)",
+    "operator_code_review": "the seller must read or run code published by this operator",
+    "third_party_signup": "the seller must create an account with some service to deliver",
+    "human_approval": "delivery cannot be produced without a human in the seller's loop",
+    "public_publication": "the seller must publish the output at a URL a stranger can fetch",
+}
 BLOCK_HASH_RE = re.compile(r"\A[0-9A-F]{64}\Z")
 ANY_CASE_HASH_RE = re.compile(r"\A[0-9a-fA-F]{64}\Z")
 # 64 hex characters standing on their own: a Nano seed or private key is
@@ -239,6 +251,7 @@ def check_jobs(document, now=None):
 
         errors.extend(_check_price(where, job))
         errors.extend(_check_quantum(where, job))
+        errors.extend(_check_entry_requirements(where, job))
 
         posted, expires = job.get("posted"), job.get("expires")
         posted_parts, expires_parts = _rfc3339(posted), _rfc3339(expires)
@@ -292,6 +305,26 @@ def check_jobs(document, now=None):
             )
         if state in CLAIMED_STATES and not isinstance(job.get("claim_url"), str):
             errors.append("%s: state is %r but 'claim_url' is not a URL string" % (where, state))
+    return errors
+
+
+def _check_entry_requirements(where, job):
+    reqs = job.get("entry_requirements")
+    if not isinstance(reqs, list):
+        return ["%s: 'entry_requirements' must be a list, possibly empty - a job that does not "
+                "declare what it demands of the seller cannot be filtered by the agents it is for"
+                % where]
+    errors, seen = [], set()
+    for value in reqs:
+        if not isinstance(value, str):
+            errors.append("%s: every 'entry_requirements' value must be a string" % where)
+        elif value not in ENTRY_REQUIREMENTS:
+            errors.append("%s: 'entry_requirements' value %r is not in the allowed set: %s"
+                          % (where, value, ", ".join(sorted(ENTRY_REQUIREMENTS))))
+        elif value in seen:
+            errors.append("%s: 'entry_requirements' lists %r twice" % (where, value))
+        else:
+            seen.add(value)
     return errors
 
 

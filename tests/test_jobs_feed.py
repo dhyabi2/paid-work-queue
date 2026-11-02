@@ -71,6 +71,7 @@ def board(**changes):
         "claimed_by": None,
         "claim_url": None,
         "receipt_id": None,
+        "entry_requirements": ["public_publication"],
     }
     job.update(changes)
     return {"updated": NOW, "currency": "XNO", "jobs": [job]}
@@ -276,6 +277,7 @@ class StrangerCheckable(unittest.TestCase):
                                ("expires", "2026-10-18T07:00:00Z"),
                                ("claimed_by", "someone"),
                                ("receipt_id", "r-1"),
+                               ("entry_requirements", ["xno_balance"]),
                                ("acceptance", ["only one line now"])):
             other = read_jobs(board(**{field: altered}))
             self.assertNotEqual(board_digest(other), baseline, field)
@@ -283,7 +285,7 @@ class StrangerCheckable(unittest.TestCase):
         self.assertEqual(sorted(BOARD_FIELDS),
                          sorted(("id", "title", "description", "acceptance",
                                  "price_raw", "expires", "claimed_by",
-                                 "receipt_id")))
+                                 "receipt_id", "entry_requirements")))
         self.assertNotIn("state", BOARD_FIELDS)
         self.assertNotIn("hours_left", BOARD_FIELDS)
         self.assertEqual(feed["jobs_digest_over"], list(BOARD_FIELDS))
@@ -700,6 +702,91 @@ class TheCountdownIsADatedSnapshot(unittest.TestCase):
         lines = hours_left_drift(leap, self.now)
         self.assertTrue(any("cannot be re-derived" in line for line in lines), lines)
 
+
+def three_jobs(reqs, **change):
+    doc = board()
+    base = doc["jobs"][0]
+    doc["jobs"] = []
+    for i, r in enumerate(reqs):
+        j = dict(base, id="job-t-%d" % i, entry_requirements=list(r), **change)
+        if i == 1:
+            j["price_raw"] = "150000000000000000000000000000"
+        doc["jobs"].append(j)
+    return doc
+
+
+class EntryRequirementsInTheFeed(unittest.TestCase):
+
+    def test_claimable_with_nothing_lists_only_rows_that_demand_nothing(self):
+        feed, _, _ = built(three_jobs([[], ["public_publication"], ["xno_balance"]]))
+        self.assertEqual(feed["claimable_with_nothing"], ["job-t-0", "job-t-1"])
+        self.assertEqual(feed["claimable_with_nothing_count"], 2)
+
+    def test_public_publication_alone_does_not_disqualify_a_row(self):
+        feed, _, _ = built(three_jobs([["public_publication"]]))
+        self.assertEqual(feed["claimable_with_nothing"], ["job-t-0"])
+
+    def test_an_expired_row_is_never_claimable_with_nothing(self):
+        feed, _, _ = built(three_jobs([[], ["public_publication"]]), now=AFTER_EXPIRY)
+        self.assertEqual((feed["claimable_with_nothing"], feed["claimable_with_nothing_count"],
+                          feed["claimable_with_nothing_total_xno"]), ([], 0, "0"))
+
+    def test_a_claimed_row_is_not_claimable(self):
+        feed, _, _ = built(three_jobs([[]], state="claimed", claimed_by="x",
+                                      claim_url="https://example.invalid/1"))
+        self.assertEqual(feed["claimable_with_nothing"], [])
+
+    def test_a_board_with_no_such_row_publishes_zero_rather_than_omitting(self):
+        feed, _, _ = built(three_jobs([["xno_balance"]]))
+        for key, want in (("claimable_with_nothing", []), ("claimable_with_nothing_count", 0),
+                          ("claimable_with_nothing_total_xno", "0")):
+            self.assertIn(key, feed)
+            self.assertEqual(feed[key], want)
+
+    def test_the_total_is_summed_in_raw_and_never_through_a_float(self):
+        # 0.07 + 0.15 in floats is 0.22000000000000003
+        feed, _, _ = built(three_jobs([[], []]))
+        self.assertEqual(feed["claimable_with_nothing_total_xno"], "0.22")
+
+    def test_entry_requirements_is_inside_the_jobs_digest(self):
+        a = board_digest(read_jobs(three_jobs([[]])))
+        b = board_digest(read_jobs(three_jobs([["xno_balance"]])))
+        self.assertNotEqual(a, b)
+        self.assertIn("entry_requirements", BOARD_FIELDS)
+
+    def test_the_derived_fields_are_outside_the_jobs_digest(self):
+        doc = three_jobs([[]])
+        early, _, _ = built(doc, now=NOW)
+        late, _, _ = built(doc, now=AFTER_EXPIRY)
+        self.assertEqual(early["jobs_digest_halves"], late["jobs_digest_halves"])
+        self.assertNotEqual(early["claimable_with_nothing_count"], late["claimable_with_nothing_count"])
+
+    def test_check_reports_a_drifted_count_as_stale_not_as_a_digest_mismatch(self):
+        feed, jobs, _ = built(three_jobs([[]]))
+        feed = json.loads(serialise(feed).decode("utf-8"))
+        feed["claimable_with_nothing_count"] = 5
+        result = check(feed, jobs, [], 0, moment(NOW))
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["reason"], "feed_stale")
+        self.assertTrue(any("claimable_with_nothing_count" in f for f in result["stale_fields"]))
+
+    def test_changing_a_requirement_surfaces_as_digest_mismatch(self):
+        feed, _, _ = built(three_jobs([[]]))
+        feed = json.loads(serialise(feed).decode("utf-8"))
+        changed = read_jobs(three_jobs([["xno_balance"]]))
+        self.assertEqual(check(feed, changed, [], 0, moment(NOW))["reason"], "feed_digest_mismatch")
+
+    def test_a_board_row_without_the_field_is_refused_by_the_reader(self):
+        doc = three_jobs([[]])
+        del doc["jobs"][0]["entry_requirements"]
+        with self.assertRaises(Refusal):
+            read_jobs(doc)
+
+    def test_the_html_says_who_needs_nothing_but_the_work(self):
+        feed, _, _ = built(three_jobs([[], ["xno_balance"]]))
+        page = render_html(feed)
+        self.assertIn("Needs nothing from you but the work.", page)
+        self.assertIn("must hold XNO of its own", page)
 
 if __name__ == "__main__":
     unittest.main()

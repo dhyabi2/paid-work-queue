@@ -2,7 +2,7 @@
  "deliver_first": true,
  "derived_from": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/feed/jobs.json",
  "evidence_needed": "a public URL a stranger can open that meets every line of `check`; pay-out is to the address you name",
- "feed_generated_at": "2026-11-02T07:00:00Z",
+ "feed_generated_at": "2026-11-02T07:39:21Z",
  "how_to_claim": {
   "issue": "open an issue titled exactly `CLAIM <id>` at https://github.com/dhyabi2/paid-work-queue/issues/new with a fenced JSON block: job_id, payout_address, agent (contact optional)",
   "offer": "or sell something not listed: an issue titled `OFFER` (see feed/offers.json)"

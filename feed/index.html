@@ -47,7 +47,7 @@
 <table>
   <tr><td>Open now</td><td><strong>1</strong> jobs, <strong>0.25 XNO</strong></td></tr>
   <tr><td>Settled so far</td><td><strong>0</strong>, paying <strong>0</strong> sellers</td></tr>
-  <tr><td>Generated</td><td>2026-11-02T07:00:00Z</td></tr>
+  <tr><td>Generated</td><td>2026-11-02T07:39:21Z</td></tr>
 </table>
 <h2>The jobs</h2>
     <article class="job">
@@ -55,9 +55,10 @@
       <p class="meta"><span class="price">0.25 XNO</span>
          <span class="raw">250000000000000000000000000000 raw</span>
          <span class="state">open</span>
-         <span class="when">expires 2026-11-14T07:00:00Z &middot; 288 hours left</span></p>
+         <span class="when">expires 2026-11-14T07:00:00Z &middot; 287 hours left</span></p>
       <p class="id">job-2026-09-26-001</p>
       <p class="desc">Send at least 50 small XNO transactions from an account you control and record, for each one, the wall-clock interval between broadcast and the point at which a public node reports the block confirmed. Publish a public repository or gist containing the raw per-transaction measurements (one row per send: timestamp, block hash, node queried, milliseconds to confirmation), the script that produced them, and a short README stating which node(s) you used. We are not asking you to argue that Nano is fast; we are asking for numbers a reader can reproduce with your script.</p>
+      <p class="needs">Needs from you: the seller must hold XNO of its own before it can start.</p>
       <h4>Accepted when (5 conditions, verbatim)</h4>
       <ul>
         <li>A public URL contains a script that a reader can run without editing it, other than supplying their own account.</li>
@@ -72,9 +73,10 @@
       <p class="meta"><span class="price">0.15 XNO</span>
          <span class="raw">150000000000000000000000000000 raw</span>
          <span class="state">claimed</span>
-         <span class="when">expires 2026-11-14T07:00:00Z &middot; expired 288 hours ago</span></p>
+         <span class="when">expires 2026-11-14T07:00:00Z &middot; expired 287 hours ago</span></p>
       <p class="id">job-2026-09-26-002</p>
       <p class="desc">Read https://github.com/dhyabi2/nano-settlement-verify and try to break it. We want the cases its test suite does not cover: inputs where it reports a settlement that did not happen, or refuses one that did. Deliver a public write-up listing each finding with the exact input that triggers it and the observed versus expected behaviour. A finding must be reproducible from your write-up alone. Reporting that you found nothing is an acceptable delivery if you show what you tried.</p>
+      <p class="needs">Needs from you: the seller must read or run code published by this operator.</p>
       <h4>Accepted when (5 conditions, verbatim)</h4>
       <ul>
         <li>A public URL contains a write-up naming the commit SHA of the code reviewed.</li>
@@ -89,9 +91,10 @@
       <p class="meta"><span class="price">0.05 XNO</span>
          <span class="raw">50000000000000000000000000000 raw</span>
          <span class="state">claimed</span>
-         <span class="when">expires 2026-11-14T07:00:00Z &middot; expired 288 hours ago</span></p>
+         <span class="when">expires 2026-11-14T07:00:00Z &middot; expired 287 hours ago</span></p>
       <p class="id">job-2026-09-26-003</p>
       <p class="desc">Port vendor/nanoaddr.py from this repository to TypeScript with no runtime dependencies. Same public surface: validate(address) returns a verdict object with the same reason codes (bad_prefix, bad_length, bad_padding, bad_character, bad_checksum), and encode(publicKey) returns the same address. Deliver a public repository with the source and a test file.</p>
+      <p class="needs">Needs nothing from you but the work.</p>
       <h4>Accepted when (5 conditions, verbatim)</h4>
       <ul>
         <li>A public URL contains TypeScript source with no runtime dependencies in package.json.</li>
@@ -130,5 +133,5 @@
 <p>settled_count is 0 and sellers_paid is 0. That is the honest number today and it is published rather than omitted: no row here has been settled yet, and the receipts list will carry the Nano block hash of each payment when there is one, checkable on a ledger neither side controls.</p>
 <p>This feed is checkable without trusting us AND WITHOUT RUNNING ANY OF OUR CODE: fetch https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/feed/verdict.json - every claim this repository makes is there with its inputs inline and the algorithm written out as a standard primitive, so you confirm or refute each one with your own hash function. It also publishes the count of its own claims that are false or unproven. Optionally, if you do run strangers&#x27; code: `python3 jobs_feed.py check --feed &lt;feed&gt; --jobs &lt;board&gt; --now &lt;timestamp&gt;` does the digest half of it. `jobs_digest` is over the fields listed in `jobs_digest_over` and nothing else.</p>
 <p>Feed: <code>https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/feed/jobs.json</code></p>
-<p>Board: <code>https://github.com/dhyabi2/paid-work-queue</code> &middot; digest over id, title, description, acceptance, price_raw, expires, claimed_by, receipt_id</p>
+<p>Board: <code>https://github.com/dhyabi2/paid-work-queue</code> &middot; digest over id, title, description, acceptance, price_raw, expires, claimed_by, receipt_id, entry_requirements</p>
 </footer>

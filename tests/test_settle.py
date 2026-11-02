@@ -66,6 +66,7 @@ def job(job_id="job-1", state="claimed", price_raw=PRICE_RAW, price_xno=PRICE_XN
         "claimed_by": claimed_by,
         "claim_url": claim_url,
         "receipt_id": None,
+        "entry_requirements": ["public_publication"],
     }
     if payout_address is not None:
         body["payout_address"] = payout_address

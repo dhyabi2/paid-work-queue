@@ -60,6 +60,7 @@ def job(job_id, price_xno="0.05", state="open", expires=FUTURE):
         "claimed_by": None,
         "claim_url": None,
         "receipt_id": None,
+        "entry_requirements": ["public_publication"],
     }
 
 

@@ -20,7 +20,11 @@
       "state": "open",
       "claimed_by": null,
       "claim_url": null,
-      "receipt_id": null
+      "receipt_id": null,
+      "entry_requirements": [
+        "xno_balance",
+        "public_publication"
+      ]
     },
     {
       "id": "job-2026-09-26-002",
@@ -40,7 +44,11 @@
       "state": "claimed",
       "claimed_by": "matheus24scc",
       "claim_url": "https://github.com/dhyabi2/paid-work-queue/issues/28",
-      "receipt_id": null
+      "receipt_id": null,
+      "entry_requirements": [
+        "operator_code_review",
+        "public_publication"
+      ]
     },
     {
       "id": "job-2026-09-26-003",
@@ -60,7 +68,10 @@
       "state": "claimed",
       "claimed_by": "ket4min-susan",
       "claim_url": "https://github.com/dhyabi2/paid-work-queue/issues/29",
-      "receipt_id": null
+      "receipt_id": null,
+      "entry_requirements": [
+        "public_publication"
+      ]
     }
   ]
 }

@@ -82,7 +82,7 @@ REQUIRED_JOB_FIELDS = ("id", "title", "price_raw", "expires", "acceptance", "sta
 # Copied from the board, and therefore what `jobs_digest` is taken over. `state`
 # and `hours_left` are NOT here: see the module docstring.
 BOARD_FIELDS = ("id", "title", "description", "acceptance", "price_raw",
-                "expires", "claimed_by", "receipt_id")
+                "expires", "claimed_by", "receipt_id", "entry_requirements")
 
 SECONDS_PER_HOUR = 3600
 
@@ -357,6 +357,12 @@ def read_jobs(document):
                           "%s: 'acceptance' must be a list" % job_id)
         if not isinstance(job.get("state"), str):
             raise Refusal("bad_job_shape", "%s: 'state' must be a string" % job_id)
+        reqs = job.get("entry_requirements")
+        if not isinstance(reqs, list) or any(
+                not isinstance(r, str) or r not in validate.ENTRY_REQUIREMENTS for r in reqs):
+            raise Refusal("bad_job_shape",
+                          "%s: 'entry_requirements' must be a list drawn from %s"
+                          % (job_id, sorted(validate.ENTRY_REQUIREMENTS)))
         if job_id in seen:
             raise Refusal("duplicate_job_id",
                           "two jobs share the id %r; a seller could not tell "
@@ -372,6 +378,7 @@ def read_jobs(document):
             "expires": stamp(moment(job.get("expires"))),
             "claimed_by": job.get("claimed_by"),
             "receipt_id": job.get("receipt_id"),
+            "entry_requirements": list(job["entry_requirements"]),
             "board_state": job["state"],
         })
     return jobs
@@ -429,6 +436,7 @@ def build(jobs, receipts, payees_paid, now, buyer_account=None,
     open_raw = 0
     open_count = 0
     expiring_soon = 0
+    nothing_ids, nothing_raw = [], 0
 
     for job in jobs:
         expires = moment(job["expires"])
@@ -444,6 +452,9 @@ def build(jobs, receipts, payees_paid, now, buyer_account=None,
             open_raw += int(job["price_raw"])
             if left < 72:
                 expiring_soon += 1
+            if [r for r in job["entry_requirements"] if r != "public_publication"] == []:
+                nothing_ids.append(job["id"])
+                nothing_raw += int(job["price_raw"])
 
         published.append({
             "id": job["id"],
@@ -458,6 +469,7 @@ def build(jobs, receipts, payees_paid, now, buyer_account=None,
             "state": state,
             "claimed_by": job["claimed_by"],
             "receipt_id": job["receipt_id"],
+            "entry_requirements": list(job["entry_requirements"]),
         })
 
     feed = {
@@ -473,6 +485,12 @@ def build(jobs, receipts, payees_paid, now, buyer_account=None,
         "hours_left_as_of": stamp(now),
         "hours_left_tolerance_hours": HOURS_LEFT_TOLERANCE_HOURS,
         "hours_left_note": HOURS_LEFT_NOTE,
+        "entry_requirements_vocabulary": dict(validate.ENTRY_REQUIREMENTS),
+        # Derived from the board AND the clock, so outside jobs_digest. Published even when
+        # empty: "nothing here can be taken without a wallet" is the answer an agent needs.
+        "claimable_with_nothing": nothing_ids,
+        "claimable_with_nothing_count": len(nothing_ids),
+        "claimable_with_nothing_total_xno": xno(nothing_raw),
         "open_count": open_count,
         "open_total_raw": str(open_raw),
         "open_total_xno": xno(open_raw),
@@ -521,6 +539,12 @@ def render_html(feed):
     """
     esc = html.escape
 
+    def needs(job):
+        real = [r for r in job.get("entry_requirements", []) if r != "public_publication"]
+        if not real:
+            return "Needs nothing from you but the work."
+        return "Needs from you: " + "; ".join(feed["entry_requirements_vocabulary"][r] for r in real) + "."
+
     def row(job):
         items = "\n".join(
             "        <li>%s</li>" % esc(line) for line in job["acceptance"])
@@ -535,6 +559,7 @@ def render_html(feed):
          <span class="when">expires %s &middot; %s</span></p>
       <p class="id">%s</p>
       <p class="desc">%s</p>
+      <p class="needs">%s</p>
       <h4>Accepted when (%d conditions, verbatim)</h4>
       <ul>
 %s
@@ -542,7 +567,7 @@ def render_html(feed):
     </article>""" % (
             " lapsed" if lapsed else "", esc(job["title"]), esc(job["price_xno"]),
             esc(job["price_raw"]), esc(job["state"]), esc(job["expires"]),
-            esc(when), esc(job["id"]), esc(job["description"]),
+            esc(when), esc(job["id"]), esc(job["description"]), esc(needs(job)),
             job["acceptance_count"], items)
 
     doors = []
@@ -758,6 +783,8 @@ def check(feed, jobs, receipts, payees_paid, now, operator_accounts=()):
     stale.extend(hours_left_drift(feed, now))
 
     for field in ("open_count", "open_total_raw", "open_total_xno",
+                  "claimable_with_nothing", "claimable_with_nothing_count",
+                  "claimable_with_nothing_total_xno",
                   "settled_count", "sellers_paid",
                   # A stale demand number is the one a reader would mark, so it
                   # is re-derived here rather than trusted like any other.
@@ -808,6 +835,7 @@ def _control_board(**changes):
         "claimed_by": None,
         "claim_url": None,
         "receipt_id": None,
+        "entry_requirements": ["public_publication"],
     }
     job.update(changes)
     return {"updated": CONTROL_NOW, "currency": "XNO", "jobs": [job]}

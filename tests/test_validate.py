@@ -50,6 +50,7 @@ def job(**overrides):
         "claimed_by": None,
         "claim_url": None,
         "receipt_id": None,
+        "entry_requirements": ["public_publication"],
     }
     entry.update(overrides)
     return entry
@@ -504,6 +505,56 @@ class Spellings(TreeCase):
                 errors = cross_check(jobs, receipts)
                 self.assertTrue([e for e in errors if "priced at" in e],
                                 "a non-amount was accepted: %r" % bad)
+
+
+class EntryRequirements(unittest.TestCase):
+    """What a job demands of the seller is declared, closed-set, and independent of any clock."""
+
+    def errs(self, **kw):
+        entry = job(**kw)
+        if kw.get("entry_requirements", 0) is None:
+            del entry["entry_requirements"]
+        return [e for e in check_jobs(jobs_doc(entry)) if "entry_requirements" in e]
+
+    def test_a_job_without_entry_requirements_is_refused(self):
+        e = self.errs(entry_requirements=None)
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("job-001", e[0])
+
+    def test_a_bare_string_is_not_a_list_of_one(self):
+        self.assertEqual(len(self.errs(entry_requirements="xno_balance")), 1)
+
+    def test_an_unknown_requirement_is_refused_not_passed_through(self):
+        e = self.errs(entry_requirements=["xno-balance"])
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("'xno-balance'", e[0])
+        self.assertIn("xno_balance", e[0])          # the allowed set is named
+
+    def test_a_non_string_value_is_refused(self):
+        self.assertEqual(len(self.errs(entry_requirements=[3])), 1)
+
+    def test_a_duplicate_requirement_is_refused(self):
+        e = self.errs(entry_requirements=["xno_balance", "xno_balance"])
+        self.assertEqual(len(e), 1, e)
+        self.assertIn("twice", e[0])
+
+    def test_an_empty_list_is_valid_and_is_the_valuable_case(self):
+        self.assertEqual(self.errs(entry_requirements=[]), [])
+
+    def test_order_is_not_significant(self):
+        self.assertEqual(self.errs(entry_requirements=["xno_balance", "public_publication"]), [])
+        self.assertEqual(self.errs(entry_requirements=["public_publication", "xno_balance"]), [])
+
+    def test_the_rule_holds_with_a_clock_too(self):
+        entry = job(entry_requirements=["bogus"])
+        with_clock = [e for e in check_jobs(jobs_doc(entry), now="2026-09-27T00:00:00Z")
+                      if "entry_requirements" in e]
+        self.assertEqual(len(with_clock), 1)
+
+    def test_the_closed_set_is_the_six_in_the_spec(self):
+        self.assertEqual(set(validate.ENTRY_REQUIREMENTS),
+                         {"xno_balance", "xno_account", "operator_code_review",
+                          "third_party_signup", "human_approval", "public_publication"})
 
 
 if __name__ == "__main__":

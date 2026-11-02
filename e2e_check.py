@@ -42,6 +42,7 @@ def job(**over):
         "price_xno": "0.25", "price_raw": str(25 * XNO // 100),
         "posted": "2026-09-26T06:00:00Z", "expires": "2026-10-03T06:00:00Z",
         "state": "open", "claimed_by": None, "claim_url": None, "receipt_id": None,
+        "entry_requirements": ["public_publication"],
     }
     entry.update(over)
     return entry

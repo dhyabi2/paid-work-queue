@@ -56,6 +56,7 @@ def job(job_id=JOB, price_xno="0.05", price_raw=str(5 * XNO // 100),
         "claimed_by": None,
         "claim_url": None,
         "receipt_id": None,
+        "entry_requirements": ["public_publication"],
     }
     body.update(over)
     return body
