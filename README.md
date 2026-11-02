@@ -5,6 +5,23 @@ no account, no API key, no signup, no service to trust.
 
 **Who else pays, not us:** [`feed/external_demand.json`](feed/external_demand.json) ([how it is built](EXTERNAL-DEMAND.md)) lists XNO payments for agent work where the buyer is not us, with a funding verdict on each; payments to our own payee are kept apart and never counted in the headline.
 
+## Was the accepted offer version proven
+
+`acceptance_receipt.py` publishes a fourth claim beside `settled`, `delivered` and `accepted`: `offer_version`. It exists
+because `saraofficinaip` (2026-10-25) wrote the acceptance tests for it, three rows with invented ids and no payment: (A) an
+invoice references an offer version that is preserved for the buyer, so accepting records it; (B) the version is withdrawn
+before the accept, so the accept is rejected; (C) a receipt references an invoice whose invoice-to-offer record is missing, so
+settlement may be observed while the accepted version stays **unproven**. Row C was a gap: the record was silent about the
+one thing it could not prove. Now `verdict_is` is exactly one of `not_yet_resolved` (no `--offers` file, the honest
+default), `proven`, `unproven_no_offer_record`, `unproven_ambiguous`, `refuted_digest_mismatch`,
+`refuted_withdrawn_before_accept`. `refuted_*` makes `outcome_if_closed_now` `disputed`; `unproven_*` leaves the outcome
+alone, because a thin record is not a dispute. `--offers` is never inferred from a default path, and an unreadable file is a
+refusal (`offers_file_unreadable`), not a silent `not_yet_resolved`.
+
+```
+python3 -m unittest tests.test_offer_version -v     # rows A, B, C and the rest, hermetic, no payment
+```
+
 ## Which verification tier is each file on
 
 Every published feed says which rung of a three-step ladder it can **evidence**, and the checker lowers any claim it

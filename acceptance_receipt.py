@@ -92,6 +92,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, "vendor"))
 
 import buy_first  # noqa: E402
+import seller_offer  # noqa: E402
 import canonical  # noqa: E402
 
 TOOL = "acceptance_receipt"
@@ -111,7 +112,20 @@ ATTEST_VERDICTS = ("accepted", "rejected", "unusable")
 # members of this tuple and not special cases, which is what stops a feed
 # quietly folding them into something kinder.
 OUTCOMES = ("accepted", "paid_and_unusable", "window_elapsed_unattested",
-            "paid_not_delivered", "unsettled")
+            "paid_not_delivered", "unsettled", "disputed")
+
+# The fourth claim (saraofficinaip's three-row fixture, 2026-10-25T00:32Z): was the OFFER VERSION that got accepted
+# the one that was paid for. `refuted_*` and `unproven_*` are told apart by prefix on purpose: unproven is our record
+# being thin, refuted is a party having moved.
+OFFER_VERDICTS = ("not_yet_resolved", "proven", "unproven_no_offer_record",
+                  "unproven_ambiguous", "refuted_digest_mismatch",
+                  "refuted_withdrawn_before_accept")
+OFFER_RULE = "order_key_resolves_to_exactly_one_offer_whose_scope_digest_is_recorded"
+OFFER_VERSION_NOTE = (
+    "A settled receipt with an unproven offer version means the money moved and the thing it was for is NOT "
+    "established by this record. `not_yet_resolved` means nobody supplied an offers file; `unproven_*` means one was "
+    "supplied and could not establish it; `refuted_*` means a party moved after the accept. Credit: the three rows "
+    "(proven, withdrawn, orphan) are saraofficinaip's fixture.")
 
 MIN_WINDOW_HOURS = 1
 MAX_WINDOW_HOURS = 720
@@ -127,7 +141,7 @@ ACCEPTANCE_FIELDS = (
     "closed_at", "outcome",
 )
 
-CLAIM_NAMES = ("settled", "delivered", "accepted")
+CLAIM_NAMES = ("settled", "delivered", "accepted", "offer_version")
 
 PARSE_CODES = (
     "dispute_window_out_of_range", "payee_checksum_failed", "bad_order_key",
@@ -139,6 +153,7 @@ STATE_CODES = (
     "no_such_acceptance", "already_delivered", "cannot_attest_before_delivery",
     "window_still_open", "already_closed", "bad_now",
     "bad_acceptances_document", "acceptance_id_space_exhausted",
+    "offers_file_unreadable", "bad_verdict_value",
 )
 REASON_CODES = PARSE_CODES + STATE_CODES
 
@@ -309,6 +324,89 @@ def checked_reason(value):
 # the document
 # --------------------------------------------------------------------------
 
+def read_offers(path):
+    """The offers document at `path`, or `offers_file_unreadable`. Never a silent fallback: "I did not look" and
+    "I looked and could not read it" are different states, and only the first is `not_yet_resolved`."""
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            document = json.load(handle)
+        return seller_offer.checked_offers(document)
+    except (OSError, ValueError) as exc:
+        raise Refusal("offers_file_unreadable", "%s: %s" % (path, exc))
+    except seller_offer.Refusal as exc:
+        raise Refusal("offers_file_unreadable", "%s is not an offers-v1 document: %s" % (path, exc.detail))
+
+
+def offer_version_claim(offers_doc, order_key, offer_id=None, *, at=None):
+    """The fourth claim. `offers_doc` None means no file was supplied: `not_yet_resolved`, the honest default.
+
+    Resolution is by `order_key`: the buyer authors it at accept time, so an offer bound to it was accepted under it.
+    `offer_id` is optional and only widens what can be said about a key that resolves to nothing: an offer that
+    exists and was DECLINED is `refuted_withdrawn_before_accept` (accepting it was refused, so it carries no key).
+    """
+    inputs = {"order_key": order_key, "offer_id": offer_id, "scope_digest_halves": None,
+              "offer_state_at_accept": None}
+
+    def claim(verdict_is, verdict, why=None):
+        if verdict_is not in OFFER_VERDICTS:
+            raise Refusal("bad_verdict_value", "offer_version verdict_is %r is not one of %s"
+                          % (verdict_is, ", ".join(OFFER_VERDICTS)))
+        out = {
+            "rule": OFFER_RULE,
+            "verdict": verdict,
+            "verdict_is": verdict_is,
+            "inputs": dict(inputs),
+            "check_without_us": (
+                "recompute scope_digest from the offer's scope with the published recipe and compare; then recompute "
+                "order_digest = blake2b-256(bytes.fromhex(scope_digest) || order_key)"),
+            "falsified_by": (
+                "no offer with that order_key; more than one; a scope whose digest does not match; or an offer whose "
+                "state at accept time was not `proposed`"),
+        }
+        if why:
+            out["because"] = why
+        if at:
+            out["resolved_at"] = at
+        return out
+
+    if offers_doc is None:
+        return claim("not_yet_resolved", None, "no --offers file was supplied; nothing was looked at")
+    offers = offers_doc["offers"]
+    matches = [o for o in offers if o.get("order_key") == order_key]
+    if len(matches) > 1:
+        inputs["offer_id"] = [o.get("id") for o in matches]
+        return claim("unproven_ambiguous", None, "%d offers carry this order_key" % len(matches))
+    if not matches:
+        wanted = [o for o in offers if offer_id is not None and o.get("id") == offer_id]
+        if wanted and wanted[0].get("state") == "declined":
+            inputs["offer_state_at_accept"] = "declined"
+            inputs["scope_digest_halves"] = wanted[0].get("scope_digest_halves")
+            return claim("refuted_withdrawn_before_accept", False,
+                         "offer %s was declined; accepting it is refused, so no acceptance can rest on it" % offer_id)
+        return claim("unproven_no_offer_record", None,
+                     "an offers file was supplied and no offer carries this order_key")
+    offer = matches[0]
+    inputs["offer_id"] = offer.get("id")
+    inputs["scope_digest_halves"] = offer.get("scope_digest_halves")
+    inputs["offer_state_at_accept"] = offer.get("state")
+    try:
+        recomputed = seller_offer.scope_digest(offer["scope"])
+        bound = seller_offer.joined(offer.get("scope_digest_halves"))
+        order_ok = (seller_offer.joined(offer.get("order_digest_halves"))
+                    == seller_offer.order_digest(bound, order_key)) if bound else False
+    except (KeyError, TypeError, ValueError, seller_offer.Refusal):
+        recomputed, bound, order_ok = None, None, False
+    if recomputed is None or recomputed != bound or not order_ok:
+        return claim("refuted_digest_mismatch", False,
+                     "the scope or order digest recomputed from the stored offer does not match the one bound at accept")
+    if offer.get("state") == "declined":
+        return claim("refuted_withdrawn_before_accept", False, "the offer is declined yet carries this order_key")
+    if offer.get("state") in ("accepted", "settled"):
+        return claim("proven", True)
+    return claim("unproven_no_offer_record", None,
+                 "the offer carries this order_key but is in state %r, not accepted" % offer.get("state"))
+
+
 def empty_acceptances():
     return {"v": STORE_V, "acceptances": []}
 
@@ -374,7 +472,8 @@ def next_acceptance_id(document, now):
 
 def open_acceptance(document, *, order_key, request_context_sha256,
                     anchor_frontier, anchor_height, dispute_window_hours,
-                    settled_block=None, amount_raw=None, payee=None, now=None):
+                    settled_block=None, amount_raw=None, payee=None, now=None,
+                    offers=None, offer_id=None):
     """One artifact carrying three independent claims, each with its own verdict."""
     now = now or stamp(datetime.datetime.now(tz=UTC))
     opened_at = stamp(moment(now, "bad_now", "now"))
@@ -446,6 +545,7 @@ def open_acceptance(document, *, order_key, request_context_sha256,
                 "rule": "buyer_attestation_inside_the_window",
                 "weaker_than_the_others_because": ACCEPTED_WEAKER_BECAUSE,
             },
+            "offer_version": offer_version_claim(offers, order_key, offer_id, at=opened_at if offers else None),
         },
         "closed_at": None,
         "outcome": None,
@@ -492,7 +592,24 @@ def deliver(document, acceptance_id, artifact_url, artifact_sha256, *, now=None)
     return document, view(row)
 
 
-def attest(document, acceptance_id, verdict, reason, *, at=None, now=None):
+def re_resolve_offer_version(row, offers, offer_id=None, *, now):
+    """The claim after looking again at the offers file, or None when no file was supplied. Pure: the caller stores
+    it only once every other refusal has passed. The earlier verdict is kept in `history`, never silently lost."""
+    if offers is None:
+        return None
+    old = row["claims"].get("offer_version")
+    new = offer_version_claim(offers, row["order_key"], offer_id or (old or {}).get("inputs", {}).get("offer_id"),
+                              at=now)
+    if old is not None and old.get("verdict_is") != new["verdict_is"]:
+        new["history"] = list(old.get("history", [])) + [
+            {"verdict_is": old.get("verdict_is"), "resolved_at": old.get("resolved_at")}]
+    elif old is not None and old.get("history"):
+        new["history"] = old["history"]
+    return new
+
+
+def attest(document, acceptance_id, verdict, reason, *, at=None, now=None,
+           offers=None, offer_id=None):
     """The buyer's judgement. The weakest of the three claims, and dated."""
     now = now or stamp(datetime.datetime.now(tz=UTC))
     attested_at = stamp(moment(at or now, "bad_at" if at else "bad_now",
@@ -510,6 +627,9 @@ def attest(document, acceptance_id, verdict, reason, *, at=None, now=None):
             "acceptance %s records no delivered artifact, so there is nothing "
             "to accept or reject yet" % (row["id"],))
 
+    looked = re_resolve_offer_version(row, offers, offer_id, now=attested_at)
+    if looked is not None:
+        row["claims"]["offer_version"] = looked
     late = moment(attested_at, "bad_at", "at") > moment(
         row["window_closes"], "bad_now", "window_closes")
     accepted = row["claims"]["accepted"]
@@ -550,7 +670,7 @@ def attest(document, acceptance_id, verdict, reason, *, at=None, now=None):
     return document, published
 
 
-def close(document, acceptance_id, *, now=None):
+def close(document, acceptance_id, *, now=None, offers=None, offer_id=None):
     """Terminal. The outcome is computed from the three claims and the window."""
     now = now or stamp(datetime.datetime.now(tz=UTC))
     closed_at = stamp(moment(now, "bad_now", "now"))
@@ -576,6 +696,9 @@ def close(document, acceptance_id, *, now=None):
                 "cannot be shortened by the party that would benefit."
                 % (row["id"], int(remaining), row["window_closes"]))
 
+    looked = re_resolve_offer_version(row, offers, offer_id, now=closed_at)
+    if looked is not None:
+        row["claims"]["offer_version"] = looked
     row["state"] = "closed"
     row["closed_at"] = closed_at
     row["outcome"] = outcome_for(row)
@@ -587,6 +710,10 @@ def outcome_for(row):
     claims = row["claims"]
     if claims["settled"]["verdict"] is not True:
         return "unsettled"
+    # A party moved after the accept: never `accepted`. An `unproven_*` or `not_yet_resolved` version leaves the
+    # outcome exactly as it was - a thin record is not a dispute.
+    if str(claims.get("offer_version", {}).get("verdict_is", "")).startswith("refuted_"):
+        return "disputed"
     if claims["delivered"]["verdict"] is not True:
         return "paid_not_delivered"
     accepted = claims["accepted"]
@@ -634,11 +761,18 @@ def feed(document, *, now=None, feed_url=None):
             1 for extra in accepted.get("subsequent_attestations", ())
             if extra.get("late") is True)
 
+    ov = [(row["claims"].get("offer_version") or {}).get("verdict_is", "not_yet_resolved") for row in rows]
     return {
         "v": V,
         "generated_at": generated_at,
         "read_this_first": READ_THIS_FIRST,
         "counts": counts,
+        # Published at zero, never omitted (an absent counter reads as "not measured").
+        "offer_version_proven": sum(1 for v in ov if v == "proven"),
+        "offer_version_unproven": sum(1 for v in ov if v.startswith("unproven_")),
+        "offer_version_refuted": sum(1 for v in ov if v.startswith("refuted_")),
+        "offer_version_not_yet_resolved": sum(1 for v in ov if v == "not_yet_resolved"),
+        "offer_version_note": OFFER_VERSION_NOTE,
         "acceptances": [json.loads(json.dumps(row)) for row in rows],
         "the_weakest_claim": WEAKEST_CLAIM_NOTE,
         "what_this_does_not_prove": list(WHAT_THIS_DOES_NOT_PROVE),
@@ -831,6 +965,10 @@ def build_parser():
 
     p_open = common(sub.add_parser("open"))
     p_open.add_argument("--order-key")
+    p_open.add_argument("--offers", default=None,
+                        help="offers.json to resolve the order key against; absent means not_yet_resolved. "
+                             "Never inferred from a default path.")
+    p_open.add_argument("--offer-id", default=None, help="the offer the order claims, if it names one")
     p_open.add_argument("--settled-block", default=None)
     p_open.add_argument("--amount-raw", default=None)
     p_open.add_argument("--payee", default=None)
@@ -852,8 +990,13 @@ def build_parser():
     p_attest.add_argument("--verdict")
     p_attest.add_argument("--reason")
     p_attest.add_argument("--at", default=None)
+    p_attest.add_argument("--offers", default=None, help="look again at offers.json")
+    p_attest.add_argument("--offer-id", default=None)
 
-    common(sub.add_parser("close")).add_argument("--id")
+    p_close = common(sub.add_parser("close"))
+    p_close.add_argument("--id")
+    p_close.add_argument("--offers", default=None, help="look again at offers.json")
+    p_close.add_argument("--offer-id", default=None)
 
     p_feed = common(sub.add_parser("feed"))
     p_feed.add_argument("--feed-url", default=None)
@@ -886,6 +1029,7 @@ def main(argv=None):
         now = stamp(moment(args.now, "bad_now", "now")) if args.now else stamp(
             datetime.datetime.now(tz=UTC))
         document = read_acceptances(args.acceptances)
+        offers = read_offers(args.offers) if getattr(args, "offers", None) else None
 
         if args.command == "open":
             _required(args, ["order-key", "request-context-sha256",
@@ -898,7 +1042,7 @@ def main(argv=None):
                 anchor_height=args.anchor_height,
                 dispute_window_hours=args.dispute_window_hours,
                 settled_block=args.settled_block, amount_raw=args.amount_raw,
-                payee=args.payee, now=now)
+                payee=args.payee, now=now, offers=offers, offer_id=args.offer_id)
         elif args.command == "deliver":
             _required(args, ["id", "artifact-url", "artifact-sha256"])
             document, row = deliver(document, args.id, args.artifact_url,
@@ -906,10 +1050,12 @@ def main(argv=None):
         elif args.command == "attest":
             _required(args, ["id", "verdict", "reason"])
             document, row = attest(document, args.id, args.verdict, args.reason,
-                                   at=args.at, now=now)
+                                   at=args.at, now=now, offers=offers,
+                                   offer_id=args.offer_id)
         elif args.command == "close":
             _required(args, ["id"])
-            document, row = close(document, args.id, now=now)
+            document, row = close(document, args.id, now=now, offers=offers,
+                                  offer_id=args.offer_id)
         elif args.command == "feed":
             published = feed(document, now=now, feed_url=args.feed_url)
             write_json(args.out, published)
