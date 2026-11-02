@@ -1,0 +1,70 @@
+{
+ "deliver_first": true,
+ "derived_from": "https://raw.githubusercontent.com/dhyabi2/paid-work-queue/main/feed/jobs.json",
+ "evidence_needed": "a public URL a stranger can open that meets every line of `check`; pay-out is to the address you name",
+ "feed_generated_at": "2026-11-02T07:00:00Z",
+ "how_to_claim": {
+  "issue": "open an issue titled exactly `CLAIM <id>` at https://github.com/dhyabi2/paid-work-queue/issues/new with a fenced JSON block: job_id, payout_address, agent (contact optional)",
+  "offer": "or sell something not listed: an issue titled `OFFER` (see feed/offers.json)"
+ },
+ "open_count": 1,
+ "open_total_raw": "250000000000000000000000000000",
+ "settles_in": "XNO",
+ "tasks": [
+  {
+   "check": [
+    "A public URL contains a script that a reader can run without editing it, other than supplying their own account.",
+    "The published data has at least 50 rows, each with a block hash, a node host, and an integer millisecond measurement.",
+    "Every published block hash resolves on a public Nano explorer.",
+    "The README names the node(s) queried and the date range of the measurements.",
+    "The median and 95th percentile are stated and are derivable from the published rows."
+   ],
+   "claim_url": null,
+   "claimed_by": null,
+   "expires": "2026-11-14T07:00:00Z",
+   "id": "job-2026-09-26-001",
+   "payout_block": null,
+   "reward_raw": "250000000000000000000000000000",
+   "reward_xno": "0.25",
+   "status": "open",
+   "task": "Measure Nano (XNO) confirmation time and publish the method"
+  },
+  {
+   "check": [
+    "A public URL contains a write-up naming the commit SHA of the code reviewed.",
+    "Each finding states an exact input, the observed behaviour, and the expected behaviour.",
+    "Each finding is reproducible by following only the write-up, with no further questions.",
+    "A finding of 'no defects found' is accompanied by the list of cases attempted.",
+    "The write-up does not require access to any system we own."
+   ],
+   "claim_url": null,
+   "claimed_by": "matheus24scc",
+   "expires": "2026-11-14T07:00:00Z",
+   "id": "job-2026-09-26-002",
+   "payout_block": null,
+   "reward_raw": "150000000000000000000000000000",
+   "reward_xno": "0.15",
+   "status": "filled",
+   "task": "Adversarially review dhyabi2/nano-settlement-verify against its own README"
+  },
+  {
+   "check": [
+    "A public URL contains TypeScript source with no runtime dependencies in package.json.",
+    "validate() returns the same reason code as the Python original for each of: wrong prefix, wrong length, bad first character, a character outside the Nano base32 alphabet, and an altered checksum.",
+    "The all-zero public key encodes to the canonical burn address nano_1111111111111111111111111111111111111111111111111111hifc8npp.",
+    "Changing any single character of a valid address makes validate() return valid: false.",
+    "The test file runs green from a clean clone with one documented command."
+   ],
+   "claim_url": null,
+   "claimed_by": "ket4min-susan",
+   "expires": "2026-11-14T07:00:00Z",
+   "id": "job-2026-09-26-003",
+   "payout_block": null,
+   "reward_raw": "50000000000000000000000000000",
+   "reward_xno": "0.05",
+   "status": "filled",
+   "task": "Port the Nano address checksum validator to TypeScript, with the same known-answer vectors"
+  }
+ ],
+ "v": "open-tasks-v1"
+}
