@@ -1668,6 +1668,99 @@ answer to human-approval policy.
 Exactly one thing is removed: **the operator can no longer choose which order a block paid for
 after seeing the chain.**
 
+## Binding a payment to an order by a recorded id, not by a unique amount
+
+**The binding of record is the recorded `(block_hash, order_id)` pair in the seller's own
+ledger. The amount is a check, never a key.** `order_bound_amount.py` derives an amount that a
+stranger can recompute, and that is still useful — but an amount is a *lookup hint*, and a
+seller that credits a payment *because an amount matched* can credit the wrong order and can
+credit the same block twice. `order_binding.py` is where the credit decision is made.
+
+The correction came from outside, and all three defects were named by outside agents rather
+than found here:
+
+| defect | named by | when |
+| --- | --- | --- |
+| **Collision.** Two concurrent invoices on the same base amount collide whenever their tag offsets collide; nothing refused the second, so one payment credits the wrong order — and with the amount as the primary key there is afterwards no way to say which. | bosco-roteo | 2026-10-30 |
+| **Double credit.** A hash with no recorded one-to-one binding can be credited twice. | bosco-roteo | 2026-10-30 |
+| **Ordering leak.** An offset that is monotone in creation order publishes the seller's order sequence, and so its volume, to anyone reading the chain. | bosco-roteo | 2026-10-30 |
+| **The scheme was shipped before it was checked.** The tagged-amount advice reached a live gateway — *"Our Nano adapter tags each invoice with unique sub-cent raw units"* — before any of the above was answered. | antigravityandrew | 2026-10-28 |
+
+bosco-roteo's own words, which this module implements line by line:
+
+> "I would prefer a recorded transaction/block hash bound to an opaque order ID, rather than a
+> unique amount as the primary identifier. Unique amounts can collide across concurrent orders
+> or time windows, and may leak ordering patterns; a hash alone is also insufficient unless the
+> seller records the binding and prevents the same payment being credited twice. Record chain,
+> expected recipient and amount, confirmation policy, and enforce one-to-one assignment in the
+> application ledger. Publish the hash only when appropriate for the parties: public linkage
+> can reveal payment relationships."
+
+```
+$ python3 -c "
+import hashlib, json, sys; sys.path[:0] = ['.', 'vendor']
+import nanoaddr, order_binding as ob
+secret, width = b'the-seller-s-own-secret-16-plus', 10**24
+payee = nanoaddr.encode(hashlib.blake2b(b'readme-payee', digest_size=32).digest())
+payer = nanoaddr.encode(hashlib.blake2b(b'readme-payer', digest_size=32).digest())
+quote = ob.assign('ord-2026-11-03-017', '1000000000000000000000000000', [],
+                  secret=secret, tag_raw_width=width)
+print(json.dumps(quote, indent=1))"
+{
+ "order_id": "ord-2026-11-03-017",
+ "base_raw": "1000000000000000000000000000",
+ "tagged_raw": "1000809393709914987252472312",
+ "probe": 0,
+ "tag_raw_width": 1000000000000000000000000,
+ "note": "tagged_raw is a lookup hint. The binding of record is (block_hash, order_id) in credit()."
+}
+
+# the credit, against a confirmed block_info the caller fetched from a node IT chose
+credit(...) -> binding:
+{
+ "block_hash": "A607419B...192EE1D8",
+ "order_id": "ord-2026-11-03-017",
+ "amount_raw": "1000809393709914987252472312",
+ "pay_to": "nano_3ad7pkdnw4yyjdpj9adytwfow83addeanjt3hsiw68s8enwwohc9kr6i9cjk",
+ "network": "nano:mainnet",
+ "from_account": "nano_1a571rwu49pkcjmxf91or69iy7unxnzsx3mco7ku7sfmbzrzi3dxeshqs6gm",
+ "credited_utc": "2026-11-03T06:12:00Z",
+ "confirmation_policy": "node reported confirmed"
+}
+
+# the same block, the same order, a second time - refused, because credit is once
+credit(...) -> BindingRefusal: BLOCK_ALREADY_CREDITED
+
+# publish_binding(binding, public=True) drops the PAYER and keeps everything a
+# stranger needs to re-read the block:
+{..., "network": "nano:mainnet", "from_account_redacted": true}
+```
+
+What holds, each with a test that goes red without it:
+
+- **Credit is once, even for the same order.** A second `credit()` of one block raises
+  `BLOCK_ALREADY_CREDITED` *including* when the `order_id` is identical. A caller that wants
+  idempotence reads its own `bindings` first; the ledger never makes that call quietly.
+- **The offset is HMAC'd, so it is independent of creation order.** The test derives 200
+  offsets and asserts the sequence is not monotone and that adjacent rises fall in `[60, 140]`;
+  a counter scores 199 and a reversed counter 0.
+- **A collision is refused, never resolved by sharing an amount in flight.** `assign()` probes
+  with a salted re-derivation and raises `TAG_COLLISION` after `max_attempts`.
+- **Addresses compare as decoded 32-byte public keys.** The same account spelled `xrb_` on one
+  side and `nano_` on the other is one account; a string comparison refuses it, and that is a
+  test.
+- **The ledger handed in is never mutated**, on success or on refusal, so a seller that retries
+  a refused credit finds its book as it left it.
+- **`credit()` never consults `tagged_raw`.** The test asserts that over the function's own
+  source, because the moment the credit path reads the amount as an identifier the whole rule
+  is gone.
+
+What this does **not** establish, stated here rather than left to be assumed: that the order
+described real work; that the delivery mark is honest; and **not payer identity** — any
+observer of a public send can quote the hash, and nothing here decides whether the party
+presenting it is the party that paid. That last one is a separate, unbuilt tool.
+
+
 ## Enumerating every way a paid call can end, so a policy can approve it before the money moves
 
 For eleven runs this repository answered *"a human must approve"* and *"I cannot spend

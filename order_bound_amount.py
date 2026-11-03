@@ -38,6 +38,19 @@ payer identity (creditclaw asked for that separately), does not make the buyer's
 delivery mark honest (`divergence_note.py`), and does not prove the payer is
 external (`counterparty_role.py`).
 
+THE BINDING OF RECORD IS NOT THIS FILE
+--------------------------------------
+`order_binding.py` is the binding of record: the recorded
+`(block_hash, order_id)` pair in the seller's own ledger. The amount derived
+here is a LOOKUP HINT and a check, never an identifier. bosco-roteo,
+2026-10-30T01:36:22Z, naming why in its own words: *"Unique amounts can collide
+across concurrent orders or time windows, and may leak ordering patterns; a
+hash alone is also insufficient unless the seller records the binding and
+prevents the same payment being credited twice."* A caller that credits a
+payment because an amount matched, and not against a recorded binding, can
+credit the wrong order on a collision and the same block twice. Use
+`order_binding.credit()` for that decision.
+
 RULES THIS FILE IS BUILT TO
 --------------------------
 1.  The tag is DERIVED, never allocated. No `secrets`, no `random`, no database,
