@@ -61,13 +61,15 @@ PAYEE = address("order-binding-payee")
 PAYER = address("order-binding-payer")
 
 
-def expect_for(amount_raw=BASE, pay_to=PAYEE, network="nano:mainnet"):
-    return {"network": network, "pay_to": pay_to, "amount_raw": amount_raw}
+def expect_for(order_id, amount_raw=BASE, pay_to=PAYEE, network="nano:mainnet"):
+    """The seller's recorded terms FOR ONE ORDER: they name the order they belong to."""
+    return {"order_id": order_id, "network": network, "pay_to": pay_to,
+            "amount_raw": amount_raw}
 
 
-def info_for(amount_raw=BASE, link=PAYEE, confirmed=True, payer=PAYER):
+def info_for(amount_raw=BASE, link=PAYEE, confirmed=True, payer=PAYER, subtype="send"):
     return {"confirmed": confirmed, "amount": amount_raw, "link_as_account": link,
-            "block_account": payer}
+            "block_account": payer, "subtype": subtype}
 
 
 def clean_ledger():
@@ -138,7 +140,7 @@ class OrderBindingTests(unittest.TestCase):
     def test_07_credit_writes_both_sides_of_the_binding(self):
         block = block_for("ord-7-block")
         out = credit(clean_ledger(), block_hash=block, order_id="ord-7",
-                     block_info=info_for(), expect=expect_for(), created_utc=NOW)
+                     block_info=info_for(), expect=expect_for("ord-7"), created_utc=NOW)
         self.assertEqual("ord-7", out["ledger"]["bindings"][block]["order_id"])
         self.assertEqual(block, out["ledger"]["settled_orders"]["ord-7"])
         self.assertEqual(NOW, out["binding"]["credited_utc"])
@@ -147,16 +149,16 @@ class OrderBindingTests(unittest.TestCase):
     def test_08_double_credit_control(self):
         block = block_for("ord-8-block")
         first = credit(clean_ledger(), block_hash=block, order_id="ord-8",
-                       block_info=info_for(), expect=expect_for(), created_utc=NOW)
+                       block_info=info_for(), expect=expect_for("ord-8"), created_utc=NOW)
         # The hard half: the SAME order_id is still refused. Credit is once.
         with self.assertRaises(BindingRefusal) as caught:
             credit(first["ledger"], block_hash=block, order_id="ord-8",
-                   block_info=info_for(), expect=expect_for(), created_utc=NOW)
+                   block_info=info_for(), expect=expect_for("ord-8"), created_utc=NOW)
         self.assertEqual("BLOCK_ALREADY_CREDITED", caught.exception.code)
         # A different block against an already-settled order is also refused.
         with self.assertRaises(BindingRefusal) as caught:
             credit(first["ledger"], block_hash=block_for("ord-8-second-block"),
-                   order_id="ord-8", block_info=info_for(), expect=expect_for(),
+                   order_id="ord-8", block_info=info_for(), expect=expect_for("ord-8"),
                    created_utc=NOW)
         self.assertEqual("ORDER_ALREADY_SETTLED", caught.exception.code)
 
@@ -166,7 +168,7 @@ class OrderBindingTests(unittest.TestCase):
         legacy = address("order-binding-payee", "xrb_")
         self.assertNotEqual(legacy, PAYEE)
         out = credit(clean_ledger(), block_hash=block_for("ord-9-block"), order_id="ord-9",
-                     block_info=info_for(link=PAYEE), expect=expect_for(pay_to=legacy),
+                     block_info=info_for(link=PAYEE), expect=expect_for("ord-9", pay_to=legacy),
                      created_utc=NOW)
         self.assertEqual("ord-9", out["binding"]["order_id"])
         self.assertTrue(out["binding"]["pay_to"].startswith("nano_"))
@@ -175,24 +177,24 @@ class OrderBindingTests(unittest.TestCase):
         ledger = clean_ledger()
         before = json.dumps(ledger, sort_keys=True)
         credit(ledger, block_hash=block_for("ord-10-block"), order_id="ord-10",
-               block_info=info_for(), expect=expect_for(), created_utc=NOW)
+               block_info=info_for(), expect=expect_for("ord-10"), created_utc=NOW)
         self.assertEqual(before, json.dumps(ledger, sort_keys=True),
                          "a successful credit mutated the ledger it was handed")
         with self.assertRaises(BindingRefusal):
             credit(ledger, block_hash=block_for("ord-10-block"), order_id="ord-10",
-                   block_info=info_for(confirmed="false"), expect=expect_for(),
+                   block_info=info_for(confirmed="false"), expect=expect_for("ord-10"),
                    created_utc=NOW)
         self.assertEqual(before, json.dumps(ledger, sort_keys=True),
                          "a refused credit mutated the ledger it was handed")
 
     def test_11_each_refusal_has_its_own_code(self):
         cases = [
-            ("NOT_CONFIRMED", dict(block_info=info_for(confirmed="false"), expect=expect_for())),
+            ("NOT_CONFIRMED", dict(block_info=info_for(confirmed="false"), expect=expect_for("ord-11"))),
             ("AMOUNT_MISMATCH", dict(block_info=info_for(amount_raw=str(int(BASE) - 1)),
-                                     expect=expect_for())),
+                                     expect=expect_for("ord-11"))),
             ("RECIPIENT_MISMATCH", dict(block_info=info_for(link=address("someone-else")),
-                                        expect=expect_for())),
-            ("NETWORK_MISMATCH", dict(block_info=info_for(), expect=expect_for(network="base"))),
+                                        expect=expect_for("ord-11"))),
+            ("NETWORK_MISMATCH", dict(block_info=info_for(), expect=expect_for("ord-11", network="base"))),
         ]
         for code, kwargs in cases:
             with self.assertRaises(BindingRefusal) as caught:
@@ -202,12 +204,12 @@ class OrderBindingTests(unittest.TestCase):
         short = block_for("ord-11-short")[:63]
         with self.assertRaises(BindingRefusal) as caught:
             credit(clean_ledger(), block_hash=short, order_id="ord-11",
-                   block_info=info_for(), expect=expect_for(), created_utc=NOW)
+                   block_info=info_for(), expect=expect_for("ord-11"), created_utc=NOW)
         self.assertEqual("BAD_BLOCK_HASH", caught.exception.code)
 
     def test_12_publish_binding_redacts_only_the_payer(self):
         out = credit(clean_ledger(), block_hash=block_for("ord-12-block"), order_id="ord-12",
-                     block_info=info_for(), expect=expect_for(), created_utc=NOW)
+                     block_info=info_for(), expect=expect_for("ord-12"), created_utc=NOW)
         binding = out["binding"]
         public = publish_binding(binding, public=True)
         self.assertNotIn("from_account", public)
@@ -228,7 +230,7 @@ class OrderBindingTests(unittest.TestCase):
         self.assertNotEqual(BASE, amount)
         out = credit(clean_ledger(), block_hash=block_for("ord-13-block"), order_id="ord-13",
                      block_info=info_for(amount_raw=amount),
-                     expect=expect_for(amount_raw=amount), created_utc=NOW)
+                     expect=expect_for("ord-13", amount_raw=amount), created_utc=NOW)
         self.assertEqual("ord-13", out["binding"]["order_id"])
         self.assertEqual("ord-13", out["ledger"]["bindings"][block_for("ord-13-block")]["order_id"])
         with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -237,6 +239,103 @@ class OrderBindingTests(unittest.TestCase):
         body = source.split("def credit(", 1)[1].split("\ndef ", 1)[0]
         self.assertNotIn("tagged_raw", body,
                          "credit() consults tagged_raw: the amount has become an identifier")
+
+    # -- break-review fixes: each of these is red on 9ec75f4 -------------
+
+    def test_17_expect_must_belong_to_the_order(self):
+        """Terms recorded for one order cannot be used to credit a block to a
+        different order: that is crediting a block to whichever order suits."""
+        block = block_for("ord-17-block")
+        unnamed = expect_for("ord-17")
+        del unnamed["order_id"]
+        for terms in (unnamed, expect_for("ord-someone-else"), expect_for("")):
+            with self.assertRaises(BindingRefusal) as caught:
+                credit(clean_ledger(), block_hash=block, order_id="ord-17",
+                       block_info=info_for(), expect=terms, created_utc=NOW)
+            self.assertEqual("ORDER_UNKNOWN", caught.exception.code)
+
+    def test_18_only_a_send_from_another_account_is_a_payment(self):
+        block = block_for("ord-18-block")
+        for subtype in ("receive", "change", "epoch", None):
+            with self.assertRaises(BindingRefusal) as caught:
+                credit(clean_ledger(), block_hash=block, order_id="ord-18",
+                       block_info=info_for(subtype=subtype), expect=expect_for("ord-18"),
+                       created_utc=NOW)
+            self.assertEqual("NOT_A_SEND", caught.exception.code, subtype)
+        # The payee paying itself, spelled either way, is not a payment.
+        for payer in (PAYEE, address("order-binding-payee", "xrb_")):
+            with self.assertRaises(BindingRefusal) as caught:
+                credit(clean_ledger(), block_hash=block, order_id="ord-18",
+                       block_info=info_for(payer=payer), expect=expect_for("ord-18"),
+                       created_utc=NOW)
+            self.assertEqual("SELF_SEND", caught.exception.code)
+
+    def test_19_reprice_of_an_open_order_is_refused_not_ignored(self):
+        first = assign("ord-19", BASE, [], secret=SECRET, tag_raw_width=WIDTH)
+        repriced = str(int(BASE) * 2)
+        with self.assertRaises(BindingRefusal) as caught:
+            assign("ord-19", repriced, [first], secret=SECRET, tag_raw_width=WIDTH)
+        self.assertEqual("AMOUNT_MISMATCH", caught.exception.code)
+        # An open invoice recorded without base_raw is still checked by range.
+        bare = {"order_id": "ord-19", "tagged_raw": first["tagged_raw"]}
+        with self.assertRaises(BindingRefusal) as caught:
+            assign("ord-19", repriced, [bare], secret=SECRET, tag_raw_width=WIDTH)
+        self.assertEqual("AMOUNT_MISMATCH", caught.exception.code)
+        # The same base is still idempotent.
+        again = assign("ord-19", BASE, [first], secret=SECRET, tag_raw_width=WIDTH)
+        self.assertEqual(first["tagged_raw"], again["tagged_raw"])
+
+    def test_20_collision_compares_amounts_as_integers(self):
+        natural = assign("ord-20", BASE, [], secret=SECRET, tag_raw_width=WIDTH)
+        for spelling in ("0" + natural["tagged_raw"], " %s " % natural["tagged_raw"],
+                         int(natural["tagged_raw"])):
+            seeded = [{"order_id": "ord-other", "tagged_raw": spelling}]
+            probed = assign("ord-20", BASE, seeded, secret=SECRET, tag_raw_width=WIDTH)
+            self.assertGreaterEqual(probed["probe"], 1, repr(spelling))
+            self.assertNotEqual(int(natural["tagged_raw"]), int(probed["tagged_raw"]))
+
+    def test_21_malformed_ledger_is_a_refusal_not_a_crash(self):
+        block = block_for("ord-21-block")
+        ledgers = [
+            [],
+            {"bindings": [], "settled_orders": {}},
+            {"bindings": {block: "not-a-dict"}, "settled_orders": {}},
+            {"bindings": {"not-a-hash": {"order_id": "x"}}, "settled_orders": {}},
+            {"bindings": {}, "settled_orders": {"x": 7}},
+        ]
+        # An absent or None side is an empty book, and the credit still writes.
+        out = credit({"bindings": None}, block_hash=block, order_id="ord-21",
+                     block_info=info_for(), expect=expect_for("ord-21"), created_utc=NOW)
+        self.assertEqual(block, out["ledger"]["settled_orders"]["ord-21"])
+        for ledger in ledgers:
+            with self.assertRaises(BindingRefusal) as caught:
+                credit(ledger, block_hash=block, order_id="ord-21", block_info=info_for(),
+                       expect=expect_for("ord-21"), created_utc=NOW)
+            self.assertEqual("BAD_LEDGER", caught.exception.code, repr(ledger))
+        books = [
+            {"bad": "shape"},
+            ["not-a-dict"],
+            [{"order_id": "ord-21", "tagged_raw": BASE, "probe": "x"}],
+            [{"order_id": "other", "tagged_raw": "12abc"}],
+        ]
+        for book in books:
+            with self.assertRaises(BindingRefusal) as caught:
+                assign("ord-21", BASE, book, secret=SECRET, tag_raw_width=WIDTH)
+            self.assertEqual("BAD_LEDGER", caught.exception.code, repr(book))
+
+    def test_22_a_lowercase_key_in_the_ledger_still_blocks_double_credit(self):
+        block = block_for("ord-22-block")
+        cases = [
+            {"bindings": {block.lower(): {"order_id": "ord-a"}},
+             "settled_orders": {"ord-a": block.lower()}},
+            # bindings lost, settled_orders still remembers the block
+            {"bindings": {}, "settled_orders": {"ord-a": block.lower()}},
+        ]
+        for ledger in cases:
+            with self.assertRaises(BindingRefusal) as caught:
+                credit(ledger, block_hash=block, order_id="ord-b", block_info=info_for(),
+                       expect=expect_for("ord-b"), created_utc=NOW)
+            self.assertEqual("BLOCK_ALREADY_CREDITED", caught.exception.code)
 
     # -- repository conventions ---------------------------------------
 
@@ -248,7 +347,8 @@ class OrderBindingTests(unittest.TestCase):
             BindingRefusal("NOT_A_REAL_CODE", "a typo'd code must not construct")
         for code in ("TAG_COLLISION", "BLOCK_ALREADY_CREDITED", "ORDER_ALREADY_SETTLED",
                      "AMOUNT_MISMATCH", "RECIPIENT_MISMATCH", "NETWORK_MISMATCH",
-                     "NOT_CONFIRMED", "BAD_ORDER_ID", "BAD_BLOCK_HASH", "NO_SECRET"):
+                     "NOT_CONFIRMED", "BAD_ORDER_ID", "BAD_BLOCK_HASH", "NO_SECRET",
+                     "ORDER_UNKNOWN", "NOT_A_SEND", "SELF_SEND", "BAD_LEDGER"):
             self.assertIn(code, REASON_CODES)
 
     def test_15_nothing_opens_a_socket(self):

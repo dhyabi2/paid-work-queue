@@ -91,6 +91,9 @@ REASON_CODES = (
     "BAD_ORDER_ID",
     "BAD_BLOCK_HASH",
     "NO_SECRET",
+    "NOT_A_SEND",
+    "SELF_SEND",
+    "BAD_LEDGER",
 )
 
 ORDER_ID_MAX = 128
@@ -187,37 +190,66 @@ def assign(order_id, base_raw, open_invoices, secret=None, tag_raw_width=None,
     if open_invoices is None:
         open_invoices = []
     if not isinstance(open_invoices, (list, tuple)):
-        raise ValueError("open_invoices must be a list of dicts")
+        raise BindingRefusal("BAD_LEDGER", "open_invoices must be a list of dicts")
     if not isinstance(max_attempts, int) or isinstance(max_attempts, bool) or max_attempts < 1:
         raise ValueError("max_attempts must be an int >= 1; got %r" % (max_attempts,))
 
+    # Read the seller's book once, refusing a malformed entry rather than
+    # letting a bare TypeError/AttributeError/ValueError escape. Amounts are
+    # compared as INTEGERS: "0" + tagged, padding or an int spelling of an
+    # amount in flight is the same amount, and a string compare missed it.
+    base = int(base_raw)
+    taken = {}
+    mine = None
+    for invoice in open_invoices:
+        if not isinstance(invoice, dict):
+            raise BindingRefusal("BAD_LEDGER", "every open invoice must be a dict; got %r"
+                                 % (type(invoice).__name__,))
+        tagged = invoice.get("tagged_raw")
+        if tagged is None or tagged == "":
+            continue
+        amount = _ledger_int(tagged, "open invoice tagged_raw")
+        if invoice.get("order_id") == order_id:
+            if mine is None:
+                mine = (invoice, amount)
+        else:
+            taken.setdefault(amount, invoice.get("order_id"))
+
     # Idempotence first: an existing open assignment for this order wins over
     # any re-derivation, because the payer may already have been quoted it.
-    for invoice in open_invoices:
-        if invoice.get("order_id") == order_id and invoice.get("tagged_raw"):
-            return {
-                "order_id": order_id,
-                "base_raw": base_raw,
-                "tagged_raw": str(invoice["tagged_raw"]),
-                "probe": int(invoice.get("probe", 0)),
-                "tag_raw_width": tag_raw_width,
-                "note": HINT_NOTE,
-            }
+    # But only for the SAME price: handing back the old amount under a new
+    # base_raw would quote one amount and record another. A re-price must
+    # expire the open invoice first, so two amounts are never in flight.
+    if mine is not None:
+        invoice, amount = mine
+        recorded_base = invoice.get("base_raw")
+        if recorded_base is not None:
+            recorded_base = _ledger_int(recorded_base, "open invoice base_raw")
+        width_ok = isinstance(tag_raw_width, int) and not isinstance(tag_raw_width, bool)
+        in_range = width_ok and base <= amount < base + tag_raw_width
+        if (recorded_base is not None and recorded_base != base) or (
+                recorded_base is None and not in_range):
+            raise BindingRefusal(
+                "AMOUNT_MISMATCH",
+                "order %r already has an open assignment of %d raw at a different base; "
+                "expire it before re-pricing to %s raw" % (order_id, amount, base_raw),
+            )
+        return {
+            "order_id": order_id,
+            "base_raw": base_raw,
+            "tagged_raw": str(amount),
+            "probe": _ledger_int(invoice.get("probe", 0), "open invoice probe"),
+            "tag_raw_width": tag_raw_width,
+            "note": HINT_NOTE,
+        }
 
-    taken = {}
-    for invoice in open_invoices:
-        tagged = invoice.get("tagged_raw")
-        if tagged is None:
-            continue
-        taken[str(tagged)] = invoice.get("order_id")
-
-    base = int(base_raw)
     collisions = 0
     probe = 0
     while True:
         preimage = order_id if probe == 0 else "%s:%d" % (order_id, probe)
-        tagged_raw = str(base + tag_offset(preimage, secret=secret, tag_raw_width=tag_raw_width))
-        holder = taken.get(tagged_raw)
+        amount = base + tag_offset(preimage, secret=secret, tag_raw_width=tag_raw_width)
+        tagged_raw = str(amount)
+        holder = taken.get(amount)
         if holder is None or holder == order_id:
             return {
                 "order_id": order_id,
@@ -238,6 +270,28 @@ def assign(order_id, base_raw, open_invoices, secret=None, tag_raw_width=None,
                 % (collisions, order_id, tag_raw_width),
             )
         probe += 1
+
+
+def _ledger_int(value, what):
+    """A non-negative integer from the seller's own book, or BAD_LEDGER."""
+    if isinstance(value, bool):
+        raise BindingRefusal("BAD_LEDGER", "%s must be an integer; got %r" % (what, value))
+    if isinstance(value, int):
+        number = value
+    elif isinstance(value, str) and value.strip().isdigit() and value.strip().isascii():
+        number = int(value.strip())
+    else:
+        raise BindingRefusal("BAD_LEDGER", "%s must be an integer; got %r" % (what, value))
+    if number < 0:
+        raise BindingRefusal("BAD_LEDGER", "%s must not be negative; got %r" % (what, value))
+    return number
+
+
+def _ledger_hash(value, what):
+    """A block hash from the seller's own book, normalised, or BAD_LEDGER."""
+    if not isinstance(value, str) or not _HASH_RE.match(value.strip().upper()):
+        raise BindingRefusal("BAD_LEDGER", "%s must be a 64-hex block hash; got %r" % (what, value))
+    return value.strip().upper()
 
 
 # --------------------------------------------------------------------------
@@ -261,7 +315,7 @@ def credit(ledger, block_hash=None, order_id=None, block_info=None, expect=None,
     retries a refused credit must find its book exactly as it left it.
     """
     if not isinstance(ledger, dict):
-        raise ValueError("ledger must be a dict")
+        raise BindingRefusal("BAD_LEDGER", "ledger must be a dict")
     if not isinstance(block_info, dict):
         raise ValueError("block_info must be a dict")
     if not isinstance(expect, dict):
@@ -284,19 +338,37 @@ def credit(ledger, block_hash=None, order_id=None, block_info=None, expect=None,
             "block_hash must be 64 hex characters; got %d" % len(block_hash.strip()),
         )
 
-    bindings = ledger.get("bindings") or {}
-    settled = ledger.get("settled_orders") or {}
+    # `or {}` would let an empty list (or "", 0) through as an empty book and
+    # then crash on write; only an absent or None side counts as empty.
+    bindings = ledger.get("bindings")
+    settled = ledger.get("settled_orders")
+    bindings = {} if bindings is None else bindings
+    settled = {} if settled is None else settled
     if not isinstance(bindings, dict) or not isinstance(settled, dict):
-        raise ValueError("ledger['bindings'] and ledger['settled_orders'] must be dicts")
+        raise BindingRefusal(
+            "BAD_LEDGER", "ledger['bindings'] and ledger['settled_orders'] must be dicts"
+        )
+
+    # Read every recorded block hash NORMALISED. A key written in lowercase by
+    # another tool is the same block; an exact-key lookup missed it and let
+    # the block be credited a second time. settled_orders is read too, so a
+    # book whose bindings side was lost still refuses the block.
+    credited = {}
+    for key, entry in bindings.items():
+        if not isinstance(entry, dict):
+            raise BindingRefusal("BAD_LEDGER", "ledger['bindings'][%r] must be a dict" % (key,))
+        credited.setdefault(_ledger_hash(key, "ledger['bindings'] key"), entry.get("order_id"))
+    for settled_order, value in settled.items():
+        credited.setdefault(_ledger_hash(value, "ledger['settled_orders'][%r]" % (settled_order,)),
+                            settled_order)
 
     # 2. credit is once, full stop - even for the same order_id. A caller that
     #    wants idempotence reads ledger["bindings"] itself; the ledger must not
     #    make that decision quietly on the caller's behalf.
-    if normalised in bindings:
+    if normalised in credited:
         raise BindingRefusal(
             "BLOCK_ALREADY_CREDITED",
-            "block %s is already bound to order %r"
-            % (normalised, bindings[normalised].get("order_id")),
+            "block %s is already bound to order %r" % (normalised, credited[normalised]),
         )
 
     # 3. one settlement per order
@@ -304,6 +376,16 @@ def credit(ledger, block_hash=None, order_id=None, block_info=None, expect=None,
         raise BindingRefusal(
             "ORDER_ALREADY_SETTLED",
             "order %r is already settled by block %s" % (order_id, settled[order_id]),
+        )
+
+    # 3b. the terms must be THIS order's terms. `expect` is the seller's
+    #     recorded pay_to/amount/network for one order and must name it;
+    #     otherwise any order's terms could credit a block to any other order.
+    if expect.get("order_id") != order_id:
+        raise BindingRefusal(
+            "ORDER_UNKNOWN",
+            "expect names order %r, not %r; the terms checked must be the recorded "
+            "terms of the order being credited" % (expect.get("order_id"), order_id),
         )
 
     # 4. confirmation policy, stated rather than assumed
@@ -336,6 +418,25 @@ def credit(ledger, block_hash=None, order_id=None, block_info=None, expect=None,
             % (nanoaddr.encode(got_key), nanoaddr.encode(want_key)),
         )
 
+    # 6b. only a SEND is a payment. On a receive block `link_as_account` is
+    #     derived from the source hash, not a recipient, and `amount` is what
+    #     the account received; neither says anyone paid the seller.
+    if block_info.get("subtype") != "send":
+        raise BindingRefusal(
+            "NOT_A_SEND",
+            "block_info['subtype'] is %r; only a send block pays an order"
+            % (block_info.get("subtype"),),
+        )
+
+    # 6c. the payee paying itself moves no money from anyone, in either spelling.
+    payer = block_info.get("block_account")
+    if payer is not None:
+        payer_key = _public_key(payer, "SELF_SEND", "block_info['block_account']")
+        if hmac.compare_digest(payer_key, want_key):
+            raise BindingRefusal(
+                "SELF_SEND", "the block is sent by the payee %s to itself" % nanoaddr.encode(want_key)
+            )
+
     # 7. the amount, as integer raw. Never a float: 1 XNO is 10**30 raw.
     try:
         paid = int(str(block_info.get("amount")))
@@ -363,8 +464,10 @@ def credit(ledger, block_hash=None, order_id=None, block_info=None, expect=None,
     }
 
     new_ledger = json.loads(json.dumps(ledger))
-    new_ledger.setdefault("bindings", {})
-    new_ledger.setdefault("settled_orders", {})
+    if new_ledger.get("bindings") is None:
+        new_ledger["bindings"] = {}
+    if new_ledger.get("settled_orders") is None:
+        new_ledger["settled_orders"] = {}
     new_ledger["bindings"][normalised] = {"order_id": order_id, "credited_utc": created_utc}
     new_ledger["settled_orders"][order_id] = normalised
 
@@ -415,8 +518,10 @@ def _self_test():
 
     key = nanoaddr.encode(hashlib.blake2b(b"order-binding-self-test-payee", digest_size=32).digest())
     block = hashlib.blake2b(b"order-binding-self-test-block", digest_size=32).hexdigest().upper()
-    expect = {"network": NETWORK, "pay_to": key, "amount_raw": "1000000000000000000000000000"}
-    info = {"confirmed": True, "amount": expect["amount_raw"], "link_as_account": key,
+    expect = {"order_id": "ord-1", "network": NETWORK, "pay_to": key,
+              "amount_raw": "1000000000000000000000000000"}
+    info = {"confirmed": True, "subtype": "send", "amount": expect["amount_raw"],
+            "link_as_account": key,
             "block_account": nanoaddr.encode(hashlib.blake2b(b"payer", digest_size=32).digest())}
     before = json.dumps({"bindings": {}, "settled_orders": {}}, sort_keys=True)
     ledger = json.loads(before)

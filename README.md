@@ -1751,6 +1751,16 @@ What holds, each with a test that goes red without it:
   test.
 - **The ledger handed in is never mutated**, on success or on refusal, so a seller that retries
   a refused credit finds its book as it left it.
+- **The terms checked must be the credited order's own.** `expect` names its `order_id`; terms
+  for one order offered against another raise `ORDER_UNKNOWN`, so a block cannot be credited to
+  whichever order suits.
+- **Only a send from someone else is a payment.** `block_info['subtype']` must be `send`
+  (`NOT_A_SEND` otherwise), and the payee paying itself, in either spelling, is `SELF_SEND`.
+- **The book is read normalised.** Recorded block hashes compare upper-cased, from both
+  `bindings` and `settled_orders`, so a lowercase key cannot be credited twice; amounts in
+  flight compare as integers in `assign()`, so `"0"` + an amount still collides; re-pricing an
+  order with an open assignment is refused (`AMOUNT_MISMATCH`) rather than quoting the old
+  amount; and a malformed book is `BAD_LEDGER`, never a bare `TypeError`.
 - **`credit()` never consults `tagged_raw`.** The test asserts that over the function's own
   source, because the moment the credit path reads the amount as an identifier the whole rule
   is gone.
