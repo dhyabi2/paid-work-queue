@@ -353,14 +353,36 @@ def credit(ledger, block_hash=None, order_id=None, block_info=None, expect=None,
     # another tool is the same block; an exact-key lookup missed it and let
     # the block be credited a second time. settled_orders is read too, so a
     # book whose bindings side was lost still refuses the block.
+    # Both sides are read into one block->order map and one order->block map.
+    # An order is bound if EITHER side says so: a book whose settled_orders side
+    # lost an entry must not let that order be paid a second time. The two sides
+    # must not contradict each other; a book that does is BAD_LEDGER, never a
+    # guess at which side is right.
     credited = {}
+    bound_orders = {}
+
+    def _record(block, order, where):
+        if not isinstance(order, str) or not order:
+            raise BindingRefusal("BAD_LEDGER", "%s must name a non-empty order_id" % where)
+        if credited.get(block, order) != order:
+            raise BindingRefusal(
+                "BAD_LEDGER", "the ledger binds block %s to both %r and %r"
+                % (block, credited[block], order))
+        if bound_orders.get(order, block) != block:
+            raise BindingRefusal(
+                "BAD_LEDGER", "the ledger settles order %r by both %s and %s"
+                % (order, bound_orders[order], block))
+        credited[block] = order
+        bound_orders[order] = block
+
     for key, entry in bindings.items():
         if not isinstance(entry, dict):
             raise BindingRefusal("BAD_LEDGER", "ledger['bindings'][%r] must be a dict" % (key,))
-        credited.setdefault(_ledger_hash(key, "ledger['bindings'] key"), entry.get("order_id"))
+        _record(_ledger_hash(key, "ledger['bindings'] key"), entry.get("order_id"),
+                "ledger['bindings'][%r]" % (key,))
     for settled_order, value in settled.items():
-        credited.setdefault(_ledger_hash(value, "ledger['settled_orders'][%r]" % (settled_order,)),
-                            settled_order)
+        _record(_ledger_hash(value, "ledger['settled_orders'][%r]" % (settled_order,)),
+                settled_order, "ledger['settled_orders'] key")
 
     # 2. credit is once, full stop - even for the same order_id. A caller that
     #    wants idempotence reads ledger["bindings"] itself; the ledger must not
@@ -372,10 +394,11 @@ def credit(ledger, block_hash=None, order_id=None, block_info=None, expect=None,
         )
 
     # 3. one settlement per order
-    if order_id in settled:
+    #    Read from BOTH sides: bindings alone is enough to say the order is paid.
+    if order_id in bound_orders:
         raise BindingRefusal(
             "ORDER_ALREADY_SETTLED",
-            "order %r is already settled by block %s" % (order_id, settled[order_id]),
+            "order %r is already settled by block %s" % (order_id, bound_orders[order_id]),
         )
 
     # 3b. the terms must be THIS order's terms. `expect` is the seller's
@@ -407,10 +430,48 @@ def credit(ledger, block_hash=None, order_id=None, block_info=None, expect=None,
     # 6. the recipient, compared as DECODED 32-byte public keys. A string
     #    comparison fails whenever one side spells the key xrb_ and the other
     #    nano_, which is the same account.
+    #    A node's block_info (json_block true) carries the recipient only inside
+    #    `contents`: contents.link_as_account, and contents.link as 64 hex. A
+    #    top-level link_as_account (a flattened record) is still read. Every
+    #    spelling present must name the same key; none present is a refusal.
     want_key = _public_key(expect.get("pay_to"), "RECIPIENT_MISMATCH", "expect['pay_to']")
-    got_key = _public_key(
-        block_info.get("link_as_account"), "RECIPIENT_MISMATCH", "block_info['link_as_account']"
-    )
+    contents = block_info.get("contents")
+    if contents is None:
+        contents = {}
+    if not isinstance(contents, dict):
+        raise BindingRefusal(
+            "RECIPIENT_MISMATCH",
+            "block_info['contents'] is a %s, not an object; call block_info with "
+            "json_block true" % type(contents).__name__,
+        )
+    got_keys = []
+    if block_info.get("link_as_account") is not None:
+        got_keys.append(_public_key(block_info.get("link_as_account"), "RECIPIENT_MISMATCH",
+                                    "block_info['link_as_account']"))
+    if contents.get("link_as_account") is not None:
+        got_keys.append(_public_key(contents.get("link_as_account"), "RECIPIENT_MISMATCH",
+                                    "block_info['contents']['link_as_account']"))
+    if contents.get("link") is not None:
+        link = contents.get("link")
+        if not isinstance(link, str) or not _HASH_RE.match(link.strip().upper()):
+            raise BindingRefusal(
+                "RECIPIENT_MISMATCH",
+                "block_info['contents']['link'] must be 64 hex characters; got %r" % (link,),
+            )
+        got_keys.append(bytes.fromhex(link.strip()))
+    if not got_keys:
+        raise BindingRefusal(
+            "RECIPIENT_MISMATCH",
+            "block_info names no recipient (no contents.link_as_account, contents.link "
+            "or link_as_account)",
+        )
+    got_key = got_keys[0]
+    if any(not hmac.compare_digest(got_key, other) for other in got_keys[1:]):
+        raise BindingRefusal(
+            "RECIPIENT_MISMATCH",
+            "block_info names more than one recipient: %s"
+            % ", ".join(sorted({nanoaddr.encode(k) for k in got_keys})),
+        )
     if not hmac.compare_digest(want_key, got_key):
         raise BindingRefusal(
             "RECIPIENT_MISMATCH",
@@ -429,13 +490,28 @@ def credit(ledger, block_hash=None, order_id=None, block_info=None, expect=None,
         )
 
     # 6c. the payee paying itself moves no money from anyone, in either spelling.
-    payer = block_info.get("block_account")
-    if payer is not None:
-        payer_key = _public_key(payer, "SELF_SEND", "block_info['block_account']")
-        if hmac.compare_digest(payer_key, want_key):
-            raise BindingRefusal(
-                "SELF_SEND", "the block is sent by the payee %s to itself" % nanoaddr.encode(want_key)
-            )
+    #     Fails CLOSED: a block whose sender cannot be read is refused, since
+    #     "no account" cannot be told apart from "the payee itself".
+    payer_keys = []
+    for value, what in ((block_info.get("block_account"), "block_info['block_account']"),
+                        (contents.get("account"), "block_info['contents']['account']")):
+        if value is not None:
+            payer_keys.append(_public_key(value, "SELF_SEND", what))
+    if not payer_keys:
+        raise BindingRefusal(
+            "SELF_SEND",
+            "block_info names no sending account (block_account or contents.account); "
+            "a self-send cannot be ruled out",
+        )
+    if any(not hmac.compare_digest(payer_keys[0], other) for other in payer_keys[1:]):
+        raise BindingRefusal(
+            "SELF_SEND", "block_info['block_account'] and contents.account disagree"
+        )
+    payer = nanoaddr.encode(payer_keys[0])
+    if hmac.compare_digest(payer_keys[0], want_key):
+        raise BindingRefusal(
+            "SELF_SEND", "the block is sent by the payee %s to itself" % nanoaddr.encode(want_key)
+        )
 
     # 7. the amount, as integer raw. Never a float: 1 XNO is 10**30 raw.
     try:
@@ -458,7 +534,7 @@ def credit(ledger, block_hash=None, order_id=None, block_info=None, expect=None,
         "amount_raw": str(wanted),
         "pay_to": nanoaddr.encode(want_key),
         "network": NETWORK,
-        "from_account": block_info.get("block_account"),
+        "from_account": block_info.get("block_account") or payer,
         "credited_utc": created_utc,
         "confirmation_policy": "node reported confirmed",
     }

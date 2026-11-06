@@ -1756,6 +1756,15 @@ What holds, each with a test that goes red without it:
   whichever order suits.
 - **Only a send from someone else is a payment.** `block_info['subtype']` must be `send`
   (`NOT_A_SEND` otherwise), and the payee paying itself, in either spelling, is `SELF_SEND`.
+  A block that names no sending account (`block_account` or `contents.account`) is also
+  `SELF_SEND`: that check fails closed.
+- **The recipient is read where a node puts it.** `block_info` with `json_block` true carries it
+  only in `contents`: `contents.link_as_account` and `contents.link` (64 hex, the public key) are
+  both read, as is a flattened top-level `link_as_account`; every spelling present must name the
+  same key, and none present, or `contents` not an object, is `RECIPIENT_MISMATCH`.
+- **An order is settled if either side of the book says so.** An order bound in `bindings` but
+  missing from `settled_orders` is still `ORDER_ALREADY_SETTLED`; a book whose two sides
+  contradict each other (one block, two orders; one order, two blocks) is `BAD_LEDGER`.
 - **The book is read normalised.** Recorded block hashes compare upper-cased, from both
   `bindings` and `settled_orders`, so a lowercase key cannot be credited twice; amounts in
   flight compare as integers in `assign()`, so `"0"` + an amount still collides; re-pricing an

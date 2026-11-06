@@ -337,6 +337,84 @@ class OrderBindingTests(unittest.TestCase):
                        expect=expect_for("ord-b"), created_utc=NOW)
             self.assertEqual("BLOCK_ALREADY_CREDITED", caught.exception.code)
 
+    def test_23_an_order_in_bindings_alone_is_not_paid_twice(self):
+        # settled_orders lost the order; bindings still binds it to a block.
+        # Red on bc2424b: the order was credited again with a second block.
+        first = block_for("ord-23-first")
+        ledger = {"bindings": {first: {"order_id": "ord-23", "credited_utc": NOW}},
+                  "settled_orders": {}}
+        with self.assertRaises(BindingRefusal) as caught:
+            credit(ledger, block_hash=block_for("ord-23-second"), order_id="ord-23",
+                   block_info=info_for(), expect=expect_for("ord-23"), created_utc=NOW)
+        self.assertEqual("ORDER_ALREADY_SETTLED", caught.exception.code)
+        # The two sides contradicting each other is BAD_LEDGER, not a guess.
+        other = block_for("ord-23-other")
+        for book in (
+            {"bindings": {first: {"order_id": "ord-23"}}, "settled_orders": {"ord-23": other}},
+            {"bindings": {first: {"order_id": "ord-x"}}, "settled_orders": {"ord-y": first}},
+            {"bindings": {first: {"credited_utc": NOW}}, "settled_orders": {}},
+        ):
+            with self.assertRaises(BindingRefusal) as caught:
+                credit(book, block_hash=block_for("ord-23-new"), order_id="ord-23-new",
+                       block_info=info_for(), expect=expect_for("ord-23-new"), created_utc=NOW)
+            self.assertEqual("BAD_LEDGER", caught.exception.code, repr(book))
+
+    def test_24_a_block_with_no_sending_account_fails_closed(self):
+        # Red on bc2424b: a missing block_account skipped the self-send check.
+        block = block_for("ord-24-block")
+        with self.assertRaises(BindingRefusal) as caught:
+            credit(clean_ledger(), block_hash=block, order_id="ord-24",
+                   block_info=info_for(payer=None), expect=expect_for("ord-24"),
+                   created_utc=NOW)
+        self.assertEqual("SELF_SEND", caught.exception.code)
+        # contents.account alone is read, and the payee there is still a self-send.
+        info = info_for(payer=None)
+        info["contents"] = {"account": PAYEE}
+        with self.assertRaises(BindingRefusal) as caught:
+            credit(clean_ledger(), block_hash=block, order_id="ord-24", block_info=info,
+                   expect=expect_for("ord-24"), created_utc=NOW)
+        self.assertEqual("SELF_SEND", caught.exception.code)
+
+    def test_25_a_node_block_info_shape_is_credited(self):
+        # The shape rpc.nano.to returned for block_info json_block true on a
+        # state send (2026-11-06): block_account, amount, balance, height,
+        # local_timestamp, successor, confirmed ("true"), subtype, balance_nano,
+        # amount_nano at the top; the recipient ONLY in contents (type, account,
+        # previous, representative, balance, link, link_as_account, signature,
+        # work, balance_nano). Red on bc2424b: RECIPIENT_MISMATCH.
+        block = block_for("ord-25-block")
+        payee_key = key_for("order-binding-payee")
+
+        def node_info(**contents_override):
+            contents = {"type": "state", "account": PAYER, "previous": block_for("ord-25-prev"),
+                        "representative": PAYER, "balance": "1",
+                        "link": payee_key.hex().upper(), "link_as_account": PAYEE,
+                        "signature": "00" * 64, "work": "0" * 16, "balance_nano": "0"}
+            contents.update(contents_override)
+            contents = {k: v for k, v in contents.items() if v is not None}
+            return {"block_account": PAYER, "amount": BASE, "balance": "1", "height": "2",
+                    "local_timestamp": "1791116182", "successor": "0" * 64,
+                    "confirmed": "true", "contents": contents, "subtype": "send",
+                    "balance_nano": "0", "amount_nano": "0.001"}
+
+        for info in (node_info(), node_info(link=None), node_info(link_as_account=None),
+                     node_info(link=payee_key.hex().lower())):
+            result = credit(clean_ledger(), block_hash=block, order_id="ord-25",
+                            block_info=info, expect=expect_for("ord-25"), created_utc=NOW)
+            self.assertEqual("ord-25", result["ledger"]["bindings"][block]["order_id"])
+            self.assertEqual(PAYER, result["binding"]["from_account"])
+        refused = [
+            node_info(link=None, link_as_account=None),          # no recipient at all
+            node_info(link=key_for("someone-else").hex()),        # spellings disagree
+            node_info(link="not-hex"),                            # link is not 64 hex
+            dict(node_info(), contents=json.dumps(node_info()["contents"])),  # json_block false
+        ]
+        for info in refused:
+            with self.assertRaises(BindingRefusal) as caught:
+                credit(clean_ledger(), block_hash=block, order_id="ord-25", block_info=info,
+                       expect=expect_for("ord-25"), created_utc=NOW)
+            self.assertEqual("RECIPIENT_MISMATCH", caught.exception.code)
+
     # -- repository conventions ---------------------------------------
 
     def test_14_self_test_is_green_and_codes_are_declared(self):
