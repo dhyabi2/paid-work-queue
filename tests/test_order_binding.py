@@ -415,6 +415,84 @@ class OrderBindingTests(unittest.TestCase):
                        expect=expect_for("ord-25"), created_utc=NOW)
             self.assertEqual("RECIPIENT_MISMATCH", caught.exception.code)
 
+    def test_26_order_id_is_verbatim_and_case_twins_are_refused(self):
+        # Red on bc18be8: "o1 " and "O1" were each credited a second block
+        # after "o1" settled, and a book recording "O1" and "o1" was read.
+        first = credit(clean_ledger(), block_hash=block_for("ord-26-a"), order_id="o1",
+                       block_info=info_for(), expect=expect_for("o1"), created_utc=NOW)
+        for bad in ("o1 ", " o1", "o1\n", "\t"):
+            with self.assertRaises(BindingRefusal) as caught:
+                credit(clean_ledger(), block_hash=block_for("ord-26-b"), order_id=bad,
+                       block_info=info_for(), expect=expect_for(bad), created_utc=NOW)
+            self.assertEqual("BAD_ORDER_ID", caught.exception.code, repr(bad))
+            for call in (lambda: assign(bad, BASE, [], secret=SECRET, tag_raw_width=WIDTH),
+                         lambda: tag_offset(bad, secret=SECRET, tag_raw_width=WIDTH)):
+                with self.assertRaises(BindingRefusal) as caught:
+                    call()
+                self.assertEqual("BAD_ORDER_ID", caught.exception.code, repr(bad))
+        with self.assertRaises(BindingRefusal) as caught:
+            credit(first["ledger"], block_hash=block_for("ord-26-b"), order_id="O1",
+                   block_info=info_for(), expect=expect_for("O1"), created_utc=NOW)
+        self.assertEqual("ORDER_ALREADY_SETTLED", caught.exception.code)
+        x, y = block_for("ord-26-x"), block_for("ord-26-y")
+        twins = [
+            {"bindings": {y: {"order_id": "o1"}}, "settled_orders": {"O1": x}},
+            {"bindings": {x: {"order_id": "O1"}, y: {"order_id": "o1"}}, "settled_orders": {}},
+            {"bindings": {}, "settled_orders": {"o1": x, "o1 ": y}},
+        ]
+        for ledger in twins:
+            with self.assertRaises(BindingRefusal) as caught:
+                credit(ledger, block_hash=block_for("ord-26-z"), order_id="other",
+                       block_info=info_for(), expect=expect_for("other"), created_utc=NOW)
+            self.assertEqual("BAD_LEDGER", caught.exception.code, repr(ledger))
+
+    def test_27_amounts_are_strict_positive_raw(self):
+        # Red on bc18be8: int(str(x)) accepted every one of these.
+        for bad in ("+1000", "1_000", " 1000 ", "-1000", "0", "01000", "1000\n",
+                    "\u0661\u0660\u0660\u0660", 1000, None):
+            for kwargs in (dict(block_info=info_for(amount_raw=bad),
+                                expect=expect_for("ord-27", amount_raw="1000")),
+                           dict(block_info=info_for(amount_raw="1000"),
+                                expect=expect_for("ord-27", amount_raw=bad))):
+                with self.assertRaises(BindingRefusal) as caught:
+                    credit(clean_ledger(), block_hash=block_for("ord-27"), order_id="ord-27",
+                           created_utc=NOW, **kwargs)
+                self.assertEqual("AMOUNT_MISMATCH", caught.exception.code, repr(bad))
+        out = credit(clean_ledger(), block_hash=block_for("ord-27"), order_id="ord-27",
+                     block_info=info_for(amount_raw="1000"),
+                     expect=expect_for("ord-27", amount_raw="1000"), created_utc=NOW)
+        self.assertEqual("1000", out["binding"]["amount_raw"])
+
+    def test_28_bad_inputs_are_refusals_not_bare_exceptions(self):
+        # Red on bc18be8: TypeError / ValueError escaped, outside REASON_CODES.
+        self.assertIn("BAD_INPUT", REASON_CODES)
+        block = block_for("ord-28")
+        calls = [
+            ("BAD_INPUT", dict(block_info=None, expect=expect_for("ord-28"), created_utc=NOW)),
+            ("BAD_INPUT", dict(block_info=[], expect=expect_for("ord-28"), created_utc=NOW)),
+            ("BAD_INPUT", dict(block_info=info_for(), expect="terms", created_utc=NOW)),
+            ("BAD_INPUT", dict(block_info=info_for(), expect=expect_for("ord-28"))),
+            ("BAD_INPUT", dict(block_info=info_for(), expect=expect_for("ord-28"),
+                               created_utc="")),
+        ]
+        for code, kwargs in calls:
+            with self.assertRaises(BindingRefusal) as caught:
+                credit(clean_ledger(), block_hash=block, order_id="ord-28", **kwargs)
+            self.assertEqual(code, caught.exception.code, repr(kwargs))
+        cyclic = clean_ledger()
+        cyclic["notes"] = [cyclic]
+        for ledger in (dict(clean_ledger(), notes={1, 2}), dict(clean_ledger(), raw=b"x"),
+                       cyclic):
+            with self.assertRaises(BindingRefusal) as caught:
+                credit(ledger, block_hash=block, order_id="ord-28", block_info=info_for(),
+                       expect=expect_for("ord-28"), created_utc=NOW)
+            self.assertEqual("BAD_LEDGER", caught.exception.code)
+
+    def test_29_credit_states_that_block_info_is_trusted_for_the_hash(self):
+        doc = credit.__doc__ or ""
+        self.assertIn("does not echo the hash", doc)
+        self.assertIn("byte-exact", doc)
+
     # -- repository conventions ---------------------------------------
 
     def test_14_self_test_is_green_and_codes_are_declared(self):
@@ -426,7 +504,8 @@ class OrderBindingTests(unittest.TestCase):
         for code in ("TAG_COLLISION", "BLOCK_ALREADY_CREDITED", "ORDER_ALREADY_SETTLED",
                      "AMOUNT_MISMATCH", "RECIPIENT_MISMATCH", "NETWORK_MISMATCH",
                      "NOT_CONFIRMED", "BAD_ORDER_ID", "BAD_BLOCK_HASH", "NO_SECRET",
-                     "ORDER_UNKNOWN", "NOT_A_SEND", "SELF_SEND", "BAD_LEDGER"):
+                     "ORDER_UNKNOWN", "NOT_A_SEND", "SELF_SEND", "BAD_LEDGER",
+                     "BAD_INPUT"):
             self.assertIn(code, REASON_CODES)
 
     def test_15_nothing_opens_a_socket(self):

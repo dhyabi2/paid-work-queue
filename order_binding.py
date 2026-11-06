@@ -78,7 +78,10 @@ TOOL = "order_binding"
 VERSION = 1
 
 #: The exhaustive refusal vocabulary. A reader who handles these handles every
-#: way this module can say no; there is no bare `ValueError` path.
+#: way `credit()` and the ledger/order inputs of `assign()` can say no; neither
+#: has a bare `ValueError`/`TypeError` path. (A wrong `tag_raw_width`,
+#: `max_attempts` or `publish_binding` argument is a programming error in the
+#: caller and still raises `ValueError`.)
 REASON_CODES = (
     "TAG_COLLISION",
     "BLOCK_ALREADY_CREDITED",
@@ -94,6 +97,7 @@ REASON_CODES = (
     "NOT_A_SEND",
     "SELF_SEND",
     "BAD_LEDGER",
+    "BAD_INPUT",
 )
 
 ORDER_ID_MAX = 128
@@ -101,7 +105,9 @@ SECRET_MIN_BYTES = 16
 TAG_WIDTH_MIN = 1024
 NETWORK = "nano:mainnet"
 
-_BASE_RAW_RE = re.compile(r"^[1-9][0-9]*$")
+# \A..\Z, not ^..$: `$` also matches before a trailing newline, so "1000\n"
+# would pass. ASCII digits only, no sign, no underscore, no padding, no zero.
+_BASE_RAW_RE = re.compile(r"\A[1-9][0-9]*\Z")
 _HASH_RE = re.compile(r"^[0-9A-F]{64}$")
 
 HINT_NOTE = (
@@ -130,6 +136,25 @@ class BindingRefusal(Exception):
         self.detail = detail
 
 
+def _check_order_id(order_id):
+    """order_id is compared BYTE-EXACT, so it must arrive verbatim: a non-empty
+    str of at most ORDER_ID_MAX characters with no surrounding whitespace.
+    "o1 " is refused rather than quietly stripped, because a stripped and an
+    unstripped spelling would otherwise be two orders in the book."""
+    if (not isinstance(order_id, str) or not order_id or len(order_id) > ORDER_ID_MAX
+            or order_id != order_id.strip()):
+        raise BindingRefusal(
+            "BAD_ORDER_ID",
+            "order_id must be a non-empty str of at most %d characters with no "
+            "leading or trailing whitespace; got %r" % (ORDER_ID_MAX, order_id),
+        )
+
+
+def _order_fold(order_id):
+    """The key under which two order ids are too alike to both be in one book."""
+    return order_id.strip().casefold()
+
+
 # --------------------------------------------------------------------------
 # Interface 1 - tag_offset
 # --------------------------------------------------------------------------
@@ -143,11 +168,7 @@ def tag_offset(order_id, secret=None, tag_raw_width=None):
     the sequence, and the ordering-leak control in the tests fails against
     every one of them.
     """
-    if not isinstance(order_id, str) or not order_id or len(order_id) > ORDER_ID_MAX:
-        raise BindingRefusal(
-            "BAD_ORDER_ID",
-            "order_id must be a non-empty str of at most %d characters" % ORDER_ID_MAX,
-        )
+    _check_order_id(order_id)
     if not isinstance(secret, (bytes, bytearray)) or len(secret) < SECRET_MIN_BYTES:
         raise BindingRefusal(
             "NO_SECRET",
@@ -176,11 +197,7 @@ def assign(order_id, base_raw, open_invoices, secret=None, tag_raw_width=None,
     Idempotent: an order that already has an open assignment gets that one
     back, unchanged, so calling this twice never puts two amounts in flight.
     """
-    if not isinstance(order_id, str) or not order_id or len(order_id) > ORDER_ID_MAX:
-        raise BindingRefusal(
-            "BAD_ORDER_ID",
-            "order_id must be a non-empty str of at most %d characters" % ORDER_ID_MAX,
-        )
+    _check_order_id(order_id)
     if not isinstance(base_raw, str) or not _BASE_RAW_RE.match(base_raw):
         raise BindingRefusal(
             "AMOUNT_MISMATCH",
@@ -313,20 +330,28 @@ def credit(ledger, block_hash=None, order_id=None, block_info=None, expect=None,
 
     Returns a NEW ledger. The ledger passed in is never mutated: a seller that
     retries a refused credit must find its book exactly as it left it.
+
+    `block_info` is TRUSTED to be the node's answer for exactly `block_hash`.
+    A node's block_info response does not echo the hash it was asked about, so
+    this function cannot check that; the caller must fetch block_info for this
+    very hash and pass both together.
+
+    `order_id` is compared byte-exact and must be passed verbatim; one with
+    surrounding whitespace is BAD_ORDER_ID, and one that differs from a settled
+    order only by case or whitespace is refused.
+
+    Every refusal is a BindingRefusal with a code in REASON_CODES.
     """
     if not isinstance(ledger, dict):
         raise BindingRefusal("BAD_LEDGER", "ledger must be a dict")
     if not isinstance(block_info, dict):
-        raise ValueError("block_info must be a dict")
+        raise BindingRefusal("BAD_INPUT", "block_info must be a dict")
     if not isinstance(expect, dict):
-        raise ValueError("expect must be a dict")
+        raise BindingRefusal("BAD_INPUT", "expect must be a dict")
     if not isinstance(created_utc, str) or not created_utc:
-        raise ValueError("created_utc must be a non-empty str; this module holds no clock")
-    if not isinstance(order_id, str) or not order_id or len(order_id) > ORDER_ID_MAX:
         raise BindingRefusal(
-            "BAD_ORDER_ID",
-            "order_id must be a non-empty str of at most %d characters" % ORDER_ID_MAX,
-        )
+            "BAD_INPUT", "created_utc must be a non-empty str; this module holds no clock")
+    _check_order_id(order_id)
 
     # 1. the hash, normalised then shape-checked
     if not isinstance(block_hash, str):
@@ -360,10 +385,19 @@ def credit(ledger, block_hash=None, order_id=None, block_info=None, expect=None,
     # guess at which side is right.
     credited = {}
     bound_orders = {}
+    folded_orders = {}
 
     def _record(block, order, where):
         if not isinstance(order, str) or not order:
             raise BindingRefusal("BAD_LEDGER", "%s must name a non-empty order_id" % where)
+        # Two recorded ids that differ only by case or surrounding whitespace
+        # ("O1" settled, "o1" bound) are one order spelled twice, or two orders
+        # no reader can tell apart. Either way the book is not trustworthy.
+        twin = folded_orders.setdefault(_order_fold(order), order)
+        if twin != order:
+            raise BindingRefusal(
+                "BAD_LEDGER", "the ledger records order ids %r and %r, which differ only "
+                "by case or whitespace" % (twin, order))
         if credited.get(block, order) != order:
             raise BindingRefusal(
                 "BAD_LEDGER", "the ledger binds block %s to both %r and %r"
@@ -399,6 +433,13 @@ def credit(ledger, block_hash=None, order_id=None, block_info=None, expect=None,
         raise BindingRefusal(
             "ORDER_ALREADY_SETTLED",
             "order %r is already settled by block %s" % (order_id, bound_orders[order_id]),
+        )
+    twin = folded_orders.get(_order_fold(order_id))
+    if twin is not None:
+        raise BindingRefusal(
+            "ORDER_ALREADY_SETTLED",
+            "order %r differs only by case or whitespace from %r, already settled by "
+            "block %s" % (order_id, twin, bound_orders[twin]),
         )
 
     # 3b. the terms must be THIS order's terms. `expect` is the seller's
@@ -514,15 +555,19 @@ def credit(ledger, block_hash=None, order_id=None, block_info=None, expect=None,
         )
 
     # 7. the amount, as integer raw. Never a float: 1 XNO is 10**30 raw.
-    try:
-        paid = int(str(block_info.get("amount")))
-        wanted = int(str(expect.get("amount_raw")))
-    except (TypeError, ValueError):
+    #    Both must be ASCII digits in a str, no sign, no padding, no "_", no
+    #    leading zero, and not zero: int(str(x)) accepted "+1000", "1_000",
+    #    " 1000 ", "-1000" and "0", and a zero-raw "payment" pays nothing.
+    raw_paid = block_info.get("amount")
+    raw_wanted = expect.get("amount_raw")
+    if not all(isinstance(v, str) and _BASE_RAW_RE.match(v) for v in (raw_paid, raw_wanted)):
         raise BindingRefusal(
             "AMOUNT_MISMATCH",
-            "amount and amount_raw must both be integer raw in a string; got %r and %r"
-            % (block_info.get("amount"), expect.get("amount_raw")),
+            "amount and amount_raw must both be positive integer raw in a string, ASCII "
+            "digits only, no sign or leading zero; got %r and %r" % (raw_paid, raw_wanted),
         )
+    paid = int(raw_paid)
+    wanted = int(raw_wanted)
     if paid != wanted:
         raise BindingRefusal(
             "AMOUNT_MISMATCH", "the block moves %d raw, the order expects %d raw" % (paid, wanted)
@@ -539,7 +584,12 @@ def credit(ledger, block_hash=None, order_id=None, block_info=None, expect=None,
         "confirmation_policy": "node reported confirmed",
     }
 
-    new_ledger = json.loads(json.dumps(ledger))
+    # The copy is how the input stays unmutated; a book that is not plain JSON
+    # (a set, bytes, a cycle) is BAD_LEDGER here, never a bare TypeError.
+    try:
+        new_ledger = json.loads(json.dumps(ledger))
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise BindingRefusal("BAD_LEDGER", "ledger is not plain JSON: %s" % (exc,))
     if new_ledger.get("bindings") is None:
         new_ledger["bindings"] = {}
     if new_ledger.get("settled_orders") is None:

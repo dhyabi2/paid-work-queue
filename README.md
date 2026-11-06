@@ -1770,6 +1770,19 @@ What holds, each with a test that goes red without it:
   flight compare as integers in `assign()`, so `"0"` + an amount still collides; re-pricing an
   order with an open assignment is refused (`AMOUNT_MISMATCH`) rather than quoting the old
   amount; and a malformed book is `BAD_LEDGER`, never a bare `TypeError`.
+- **`order_id` is compared byte-exact; pass it verbatim.** The module never normalises an
+  order id. One with leading or trailing whitespace (`"o1 "`) is `BAD_ORDER_ID`; one that
+  differs from an already-settled order only by case or whitespace (`"O1"` after `"o1"`) is
+  `ORDER_ALREADY_SETTLED`; and a book that records two such ids is `BAD_LEDGER`.
+- **Amounts are strict positive raw.** `block_info['amount']` and `expect['amount_raw']` must
+  each be a string of ASCII digits with no sign, padding, `_` or leading zero, and not `"0"`;
+  anything else is `AMOUNT_MISMATCH`.
+- **Every refusal has a code.** A non-dict `block_info` or `expect`, or a missing
+  `created_utc`, is `BAD_INPUT`; a ledger that is not plain JSON (a set, bytes, a cycle) is
+  `BAD_LEDGER`. `credit()` raises nothing outside `REASON_CODES`.
+- **`block_info` is trusted to belong to `block_hash`.** A node's `block_info` response does not
+  echo the hash it was asked about, so `credit()` cannot check it: the caller must fetch
+  `block_info` for exactly that hash.
 - **`credit()` never consults `tagged_raw`.** The test asserts that over the function's own
   source, because the moment the credit path reads the amount as an identifier the whole rule
   is gone.
