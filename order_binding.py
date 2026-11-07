@@ -78,10 +78,11 @@ TOOL = "order_binding"
 VERSION = 1
 
 #: The exhaustive refusal vocabulary. A reader who handles these handles every
-#: way `credit()` and the ledger/order inputs of `assign()` can say no; neither
-#: has a bare `ValueError`/`TypeError` path. (A wrong `tag_raw_width`,
-#: `max_attempts` or `publish_binding` argument is a programming error in the
-#: caller and still raises `ValueError`.)
+#: way `credit()` and the ledger/order/amount/width inputs of `assign()` can say
+#: no; neither has a bare `ValueError`/`TypeError` path. (A wrong `max_attempts`
+#: or `publish_binding` argument, or a wrong `tag_raw_width` passed straight to
+#: `tag_offset()`, is a programming error in the caller and still raises
+#: `ValueError`.)
 REASON_CODES = (
     "TAG_COLLISION",
     "BLOCK_ALREADY_CREDITED",
@@ -106,6 +107,9 @@ ORDER_ID_MAX = 128
 #: Past ~4300 digits `int()` itself raises a bare ValueError (CPython's
 #: int/str conversion limit), so the cap is checked BEFORE any int() call.
 RAW_DIGITS_MAX = 39
+#: The largest amount in raw (a Nano balance is a 128-bit unsigned integer).
+#: A 39-digit string can still exceed it, so values are checked as well.
+RAW_MAX = 2 ** 128 - 1
 SECRET_MIN_BYTES = 16
 TAG_WIDTH_MIN = 1024
 NETWORK = "nano:mainnet"
@@ -152,13 +156,18 @@ def _check_order_id(order_id):
     the id the caller passed (fullwidth "\uff2f1" would be credited as "O1"),
     and casefold() is not a safe twin test outside ASCII ("STRASSE" and
     "stra\u00dfe" fold equal; dotted and dotless i do not). Refusal is the
-    fail-closed choice: no two spellings of one id can both enter a book."""
+    fail-closed choice: no two spellings of one id can both enter a book.
+
+    A control character ("o\x00", "o\n1", DEL) is refused too: it is ASCII,
+    but it is invisible or truncating in a log, a terminal or a C string, so
+    two ids a reader sees as one could both enter a book."""
     if (not isinstance(order_id, str) or not order_id or len(order_id) > ORDER_ID_MAX
-            or not order_id.isascii() or order_id != order_id.strip()):
+            or not order_id.isascii() or order_id != order_id.strip()
+            or not all(" " <= ch <= "~" for ch in order_id)):
         raise BindingRefusal(
             "BAD_ORDER_ID",
-            "order_id must be a non-empty ASCII str of at most %d characters with no "
-            "leading or trailing whitespace; got %r" % (ORDER_ID_MAX, order_id),
+            "order_id must be a non-empty printable-ASCII str of at most %d characters "
+            "with no leading or trailing whitespace; got %r" % (ORDER_ID_MAX, order_id),
         )
 
 
@@ -261,6 +270,22 @@ def assign(order_id, base_raw, open_invoices, secret=None, tag_raw_width=None,
     # compared as INTEGERS: "0" + tagged, padding or an int spelling of an
     # amount in flight is the same amount, and a string compare missed it.
     base = int(base_raw)
+    if base > RAW_MAX:
+        raise BindingRefusal(
+            "BAD_INPUT", "base_raw %s exceeds 2**128 - 1, the largest amount in raw" % base_raw)
+    # The width is checked HERE, as a coded refusal, and so is the top of the
+    # tag space: an amount above 2**128 - 1 is no Nano amount, and quoting one
+    # would put an entry in the book that the next assign() refuses as
+    # BAD_LEDGER, blocking the seller.
+    if (not isinstance(tag_raw_width, int) or isinstance(tag_raw_width, bool)
+            or tag_raw_width < TAG_WIDTH_MIN or tag_raw_width > RAW_MAX):
+        raise BindingRefusal(
+            "BAD_INPUT", "tag_raw_width must be an int in [%d, 2**128 - 1]; got %r"
+            % (TAG_WIDTH_MIN, tag_raw_width))
+    if base + tag_raw_width - 1 > RAW_MAX:
+        raise BindingRefusal(
+            "BAD_INPUT", "base_raw + tag_raw_width - 1 exceeds 2**128 - 1: the tag space "
+            "would quote an amount that is not a Nano amount; lower the base or the width")
     taken = {}
     mine = None
     for invoice in open_invoices:
@@ -272,11 +297,18 @@ def assign(order_id, base_raw, open_invoices, secret=None, tag_raw_width=None,
         if tagged is None or tagged == "":
             continue
         amount = _ledger_int(tagged, "open invoice tagged_raw")
-        if invoice.get("order_id") == order_id:
+        holder = invoice.get("order_id")
+        # An amount in flight with no order named against it is a malformed
+        # book, not a free amount: it cannot be told apart from any order's.
+        if not isinstance(holder, str) or not holder:
+            raise BindingRefusal(
+                "BAD_LEDGER", "an open invoice holding %d raw names no order_id; got %r"
+                % (amount, holder))
+        if holder == order_id:
             if mine is None:
                 mine = (invoice, amount)
         else:
-            taken.setdefault(amount, invoice.get("order_id"))
+            taken.setdefault(amount, holder)
 
     # Idempotence first: an existing open assignment for this order wins over
     # any re-derivation, because the payer may already have been quoted it.
@@ -288,8 +320,7 @@ def assign(order_id, base_raw, open_invoices, secret=None, tag_raw_width=None,
         recorded_base = invoice.get("base_raw")
         if recorded_base is not None:
             recorded_base = _ledger_int(recorded_base, "open invoice base_raw")
-        width_ok = isinstance(tag_raw_width, int) and not isinstance(tag_raw_width, bool)
-        in_range = width_ok and base <= amount < base + tag_raw_width
+        in_range = base <= amount < base + tag_raw_width
         if (recorded_base is not None and recorded_base != base) or (
                 recorded_base is None and not in_range):
             raise BindingRefusal(
@@ -312,8 +343,8 @@ def assign(order_id, base_raw, open_invoices, secret=None, tag_raw_width=None,
         preimage = order_id if probe == 0 else "%s:%d" % (order_id, probe)
         amount = base + tag_offset(preimage, secret=secret, tag_raw_width=tag_raw_width)
         tagged_raw = str(amount)
-        holder = taken.get(amount)
-        if holder is None or holder == order_id:
+        # Membership, not `taken.get(amount) is None`: no value is a sentinel.
+        if amount not in taken:
             return {
                 "order_id": order_id,
                 "base_raw": base_raw,
@@ -348,9 +379,9 @@ def _ledger_int(value, what):
         raise BindingRefusal("BAD_LEDGER", "%s must be an integer; got %r" % (what, value))
     if number < 0:
         raise BindingRefusal("BAD_LEDGER", "%s must not be negative; got %r" % (what, value))
-    if number >= 10 ** RAW_DIGITS_MAX:
+    if number > RAW_MAX:
         raise BindingRefusal(
-            "BAD_LEDGER", "%s is more than %d digits; no amount in raw is" % (what, RAW_DIGITS_MAX))
+            "BAD_LEDGER", "%s exceeds 2**128 - 1; no amount in raw does" % (what,))
     return number
 
 
@@ -623,6 +654,10 @@ def credit(ledger, block_hash=None, order_id=None, block_info=None, expect=None,
         )
     paid = int(raw_paid)
     wanted = int(raw_wanted)
+    if paid > RAW_MAX or wanted > RAW_MAX:
+        raise BindingRefusal(
+            "BAD_INPUT", "an amount exceeds 2**128 - 1, the largest amount in raw; got %r "
+            "and %r" % (raw_paid, raw_wanted))
     if paid != wanted:
         raise BindingRefusal(
             "AMOUNT_MISMATCH", "the block moves %d raw, the order expects %d raw" % (paid, wanted)
@@ -640,9 +675,11 @@ def credit(ledger, block_hash=None, order_id=None, block_info=None, expect=None,
     }
 
     # The copy is how the input stays unmutated; a book that is not plain JSON
-    # (a set, bytes, a cycle) is BAD_LEDGER here, never a bare TypeError.
+    # (a set, bytes, a cycle, NaN or Infinity) is BAD_LEDGER here, never a bare
+    # TypeError. allow_nan=False: json.dumps() otherwise writes NaN/Infinity,
+    # which is not JSON, and the book written would not be plain JSON.
     try:
-        new_ledger = json.loads(json.dumps(ledger))
+        new_ledger = json.loads(json.dumps(ledger, allow_nan=False))
     except (TypeError, ValueError, RecursionError) as exc:
         raise BindingRefusal("BAD_LEDGER", "ledger is not plain JSON: %s" % (exc,))
     if new_ledger.get("bindings") is None:

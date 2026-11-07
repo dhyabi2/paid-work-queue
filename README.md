@@ -1769,26 +1769,34 @@ What holds, each with a test that goes red without it:
   `bindings` and `settled_orders`, so a lowercase key cannot be credited twice; amounts in
   flight compare as integers in `assign()`, so `"0"` + an amount still collides; re-pricing an
   order with an open assignment is refused (`AMOUNT_MISMATCH`) rather than quoting the old
-  amount; and a malformed book is `BAD_LEDGER`, never a bare `TypeError`.
+  amount; and a malformed book is `BAD_LEDGER`, never a bare `TypeError`. An open invoice
+  that holds an amount but names no `order_id` (missing, `None`, empty or not a `str`) is
+  `BAD_LEDGER`: an amount in flight for no named order is never read as free.
 - **`order_id` is compared byte-exact; pass it verbatim.** The module never normalises an
   order id. One with leading or trailing whitespace (`"o1 "`) is `BAD_ORDER_ID`; one that
   differs from an already-settled order only by case or whitespace (`"O1"` after `"o1"`) is
   `ORDER_ALREADY_SETTLED`; and a book that records two such ids is `BAD_LEDGER`.
-- **`order_id` is ASCII, or it is refused.** A new id with any non-ASCII character is
-  `BAD_ORDER_ID` in `credit()`, `assign()` and `tag_offset()`. It is refused rather than
+- **`order_id` is printable ASCII, or it is refused.** A new id with any non-ASCII character,
+  or any control character (`"o\x00"`, `"o\n1"`, DEL), is `BAD_ORDER_ID` in `credit()`,
+  `assign()` and `tag_offset()`. It is refused rather than
   NFKC-normalised: normalising would credit an id the caller did not pass (fullwidth `Ｏ1`
   as `O1`), and case-folding is not a safe twin test outside ASCII (`straße` and `STRASSE`
   fold equal). Refusal is the fail-closed choice.
 - **Amounts are strict positive raw.** `block_info['amount']` and `expect['amount_raw']` must
   each be a string of ASCII digits with no sign, padding, `_` or leading zero, and not `"0"`;
   anything else is `AMOUNT_MISMATCH`.
-- **No amount is read past 39 digits.** A raw balance is at most 2^128 − 1, 39 digits. A longer
-  `amount`, `amount_raw` or `base_raw` is `BAD_INPUT`, and a longer `tagged_raw`, `base_raw` or
-  `probe` in the seller's own book is `BAD_LEDGER` — checked before `int()`, which past about
-  4300 digits raises a bare `ValueError` of its own.
+- **No amount is read past 2^128 − 1.** A raw balance is at most 2^128 − 1, 39 digits. A
+  longer `amount`, `amount_raw` or `base_raw` is `BAD_INPUT`, and a longer `tagged_raw`,
+  `base_raw` or `probe` in the seller's own book is `BAD_LEDGER` — the length is checked before
+  `int()`, which past about 4300 digits raises a bare `ValueError` of its own. A 39-digit value
+  above 2^128 − 1 is refused the same way, by value.
+- **`assign()` never quotes an amount it would later refuse.** `tag_raw_width` must be an `int`
+  from 1024 to 2^128 − 1, and `base_raw + tag_raw_width − 1` must not exceed 2^128 − 1;
+  otherwise `assign()` raises `BAD_INPUT` rather than a bare `ValueError`, so no quoted amount
+  can land in the book and make the next `assign()` refuse it as `BAD_LEDGER`.
 - **Every refusal has a code.** A non-dict `block_info` or `expect`, or a missing
-  `created_utc`, is `BAD_INPUT`; a ledger that is not plain JSON (a set, bytes, a cycle) is
-  `BAD_LEDGER`. A dict key that is not a `str`, at any depth, is `BAD_LEDGER` in the ledger or
+  `created_utc`, is `BAD_INPUT`; a ledger that is not plain JSON (a set, bytes, a cycle, `NaN`
+  or `Infinity`) is `BAD_LEDGER`. A dict key that is not a `str`, at any depth, is `BAD_LEDGER` in the ledger or
   an open invoice and `BAD_INPUT` in `block_info` or `expect`: the JSON copy would otherwise
   turn `1` into `"1"` and silently merge two entries. `credit()` raises nothing outside
   `REASON_CODES`.

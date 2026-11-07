@@ -581,6 +581,93 @@ class OrderBindingTests(unittest.TestCase):
             readme = f.read()
         self.assertIn("Migrating a book that already holds fold-equal order ids", readme)
 
+    def test_34_an_open_invoice_without_an_order_id_is_a_bad_ledger(self):
+        # Red on fd2b715: taken.setdefault(amount, None) stored None, and
+        # `holder is None` read it as FREE, so the amount in flight for the
+        # unnamed invoice was quoted a second time at probe 0.
+        secret, width = b"s" * 16, 10 ** 6
+        t = assign("o2", "1000000", [], secret=secret, tag_raw_width=width)["tagged_raw"]
+        for invoice in ({"tagged_raw": t}, {"order_id": None, "tagged_raw": t},
+                        {"order_id": "", "tagged_raw": t}, {"order_id": 7, "tagged_raw": t}):
+            with self.assertRaises(BindingRefusal) as caught:
+                assign("o2", "1000000", [invoice], secret=secret, tag_raw_width=width)
+            self.assertEqual("BAD_LEDGER", caught.exception.code, repr(invoice))
+        # A named holder still forces a different amount.
+        probed = assign("o2", "1000000", [{"order_id": "o9", "tagged_raw": t}],
+                        secret=secret, tag_raw_width=width)
+        self.assertNotEqual(t, probed["tagged_raw"])
+
+    def test_35_assign_never_quotes_an_amount_past_the_raw_maximum(self):
+        # Red on fd2b715: assign() returned a 61-digit (or 40-digit) amount that
+        # the next assign() refused as BAD_LEDGER, blocking the seller; and a
+        # wrong tag_raw_width raised a bare ValueError.
+        top = 2 ** 128 - 1
+        for base_raw, width in (("1000000", 10 ** 45), ("9" * 39, WIDTH),
+                                (str(top - WIDTH + 2), WIDTH)):
+            with self.assertRaises(BindingRefusal) as caught:
+                assign("ord-35", base_raw, [], secret=SECRET, tag_raw_width=width)
+            self.assertEqual("BAD_INPUT", caught.exception.code, (len(base_raw), width))
+        for width in (None, True, 1.5, "1024", 0, -1, 100, 2 ** 128):
+            with self.assertRaises(BindingRefusal) as caught:
+                assign("ord-35", BASE, [], secret=SECRET, tag_raw_width=width)
+            self.assertEqual("BAD_INPUT", caught.exception.code, repr(width))
+        # The largest base whose whole tag space still fits is accepted, and
+        # whatever it quotes reads back from the book.
+        edge = str(top - WIDTH + 1)
+        out = assign("ord-35", edge, [], secret=SECRET, tag_raw_width=WIDTH)
+        self.assertLessEqual(int(out["tagged_raw"]), top)
+        again = assign("ord-35b", BASE, [out], secret=SECRET, tag_raw_width=WIDTH)
+        self.assertEqual("ord-35b", again["order_id"])
+
+    def test_36_a_39_digit_amount_above_the_raw_maximum_is_refused(self):
+        # Red on fd2b715: 39 digits passed the length cap even above 2**128 - 1.
+        over = str(2 ** 128)
+        self.assertEqual(39, len(over))
+        for kwargs in (dict(block_info=info_for(amount_raw=over),
+                            expect=expect_for("ord-36", amount_raw=over)),
+                       dict(block_info=info_for(amount_raw="1000"),
+                            expect=expect_for("ord-36", amount_raw=over))):
+            with self.assertRaises(BindingRefusal) as caught:
+                credit(clean_ledger(), block_hash=block_for("ord-36"), order_id="ord-36",
+                       created_utc=NOW, **kwargs)
+            self.assertEqual("BAD_INPUT", caught.exception.code)
+        with self.assertRaises(BindingRefusal) as caught:
+            assign("ord-36", over, [], secret=SECRET, tag_raw_width=WIDTH)
+        self.assertEqual("BAD_INPUT", caught.exception.code)
+        for invoice in ({"order_id": "other", "tagged_raw": over},
+                        {"order_id": "other", "tagged_raw": 2 ** 128},
+                        {"order_id": "ord-36", "tagged_raw": BASE, "base_raw": over}):
+            with self.assertRaises(BindingRefusal) as caught:
+                assign("ord-36", BASE, [invoice], secret=SECRET, tag_raw_width=WIDTH)
+            self.assertEqual("BAD_LEDGER", caught.exception.code, repr(invoice))
+
+    def test_37_an_order_id_with_a_control_character_is_refused(self):
+        # Red on fd2b715: "o\x00" and friends are ASCII, so they were accepted.
+        for bad in ("o\x00", "o\x001", "o\n1", "o\t1", "o\x7f", "o\x1b[0m"):
+            calls = (
+                lambda: credit(clean_ledger(), block_hash=block_for("ord-37"), order_id=bad,
+                               block_info=info_for(), expect=expect_for(bad), created_utc=NOW),
+                lambda: assign(bad, BASE, [], secret=SECRET, tag_raw_width=WIDTH),
+                lambda: tag_offset(bad, secret=SECRET, tag_raw_width=WIDTH),
+            )
+            for call in calls:
+                with self.assertRaises(BindingRefusal) as caught:
+                    call()
+                self.assertEqual("BAD_ORDER_ID", caught.exception.code, repr(bad))
+        # Printable ASCII, inner space included, still reads.
+        self.assertEqual("o 1~", assign("o 1~", BASE, [], secret=SECRET,
+                                        tag_raw_width=WIDTH)["order_id"])
+
+    def test_38_nan_or_infinity_in_the_ledger_is_a_bad_ledger(self):
+        # Red on fd2b715: json.dumps() writes NaN/Infinity, which is not JSON,
+        # so the copy passed and the book written was not plain JSON.
+        for value in (float("nan"), float("inf"), float("-inf")):
+            ledger = dict(clean_ledger(), notes={"rate": value})
+            with self.assertRaises(BindingRefusal) as caught:
+                credit(ledger, block_hash=block_for("ord-38"), order_id="ord-38",
+                       block_info=info_for(), expect=expect_for("ord-38"), created_utc=NOW)
+            self.assertEqual("BAD_LEDGER", caught.exception.code, repr(value))
+
     # -- repository conventions ---------------------------------------
 
     def test_14_self_test_is_green_and_codes_are_declared(self):
