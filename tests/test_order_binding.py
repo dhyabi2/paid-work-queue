@@ -493,6 +493,94 @@ class OrderBindingTests(unittest.TestCase):
         self.assertIn("does not echo the hash", doc)
         self.assertIn("byte-exact", doc)
 
+    def test_30_an_amount_past_39_digits_is_a_refusal_not_a_valueerror(self):
+        # Red on 1fc3118: a 5000-digit amount reached int() and CPython's
+        # int/str digit limit raised a bare ValueError outside REASON_CODES.
+        huge = "1" * 5000
+        forty = "1" * 40
+        for bad in (huge, forty):
+            for kwargs in (dict(block_info=info_for(amount_raw=bad),
+                                expect=expect_for("ord-30", amount_raw="1000")),
+                           dict(block_info=info_for(amount_raw="1000"),
+                                expect=expect_for("ord-30", amount_raw=bad))):
+                with self.assertRaises(BindingRefusal) as caught:
+                    credit(clean_ledger(), block_hash=block_for("ord-30"), order_id="ord-30",
+                           created_utc=NOW, **kwargs)
+                self.assertEqual("BAD_INPUT", caught.exception.code, len(bad))
+            with self.assertRaises(BindingRefusal) as caught:
+                assign("ord-30", bad, [], secret=SECRET, tag_raw_width=WIDTH)
+            self.assertEqual("BAD_INPUT", caught.exception.code, len(bad))
+            for invoice in ({"order_id": "other", "tagged_raw": bad},
+                            {"order_id": "other", "tagged_raw": "0" * 4999 + "1"},
+                            {"order_id": "ord-30", "tagged_raw": BASE, "base_raw": bad},
+                            {"order_id": "ord-30", "tagged_raw": BASE, "probe": bad},
+                            {"order_id": "other", "tagged_raw": int(forty)}):
+                with self.assertRaises(BindingRefusal) as caught:
+                    assign("ord-30", BASE, [invoice], secret=SECRET, tag_raw_width=WIDTH)
+                self.assertEqual("BAD_LEDGER", caught.exception.code, repr(invoice)[:60])
+        # 39 digits is the largest real raw amount (2**128 - 1) and still reads.
+        top = str(2 ** 128 - 1)
+        self.assertEqual(39, len(top))
+        out = credit(clean_ledger(), block_hash=block_for("ord-30"), order_id="ord-30",
+                     block_info=info_for(amount_raw=top),
+                     expect=expect_for("ord-30", amount_raw=top), created_utc=NOW)
+        self.assertEqual(top, out["binding"]["amount_raw"])
+
+    def test_31_a_non_ascii_order_id_is_refused_not_normalised(self):
+        # Red on 1fc3118: fullwidth, Cyrillic and folding-unsafe ids were
+        # credited, so "\uff2f1" and "O1" (NFKC-equal) were two orders.
+        for bad in ("\uff2f1", "\u041e1", "stra\u00dfe", "o\u0301", "\u0130d", "o1\u200b"):
+            with self.assertRaises(BindingRefusal) as caught:
+                credit(clean_ledger(), block_hash=block_for("ord-31"), order_id=bad,
+                       block_info=info_for(), expect=expect_for(bad), created_utc=NOW)
+            self.assertEqual("BAD_ORDER_ID", caught.exception.code, repr(bad))
+            for call in (lambda: assign(bad, BASE, [], secret=SECRET, tag_raw_width=WIDTH),
+                         lambda: tag_offset(bad, secret=SECRET, tag_raw_width=WIDTH)):
+                with self.assertRaises(BindingRefusal) as caught:
+                    call()
+                self.assertEqual("BAD_ORDER_ID", caught.exception.code, repr(bad))
+        # An old book that already records a non-ASCII id is still READ, and a
+        # new ASCII id that folds equal to it is still refused as its twin.
+        old = {"bindings": {}, "settled_orders": {"stra\u00dfe": block_for("ord-31-old")}}
+        with self.assertRaises(BindingRefusal) as caught:
+            credit(old, block_hash=block_for("ord-31-new"), order_id="STRASSE",
+                   block_info=info_for(), expect=expect_for("STRASSE"), created_utc=NOW)
+        self.assertEqual("ORDER_ALREADY_SETTLED", caught.exception.code)
+
+    def test_32_a_non_str_key_is_a_refusal(self):
+        # Red on 1fc3118: json.dumps() turned 1 into "1" on the copy, so
+        # {1: x, "1": y} came back with one entry and the book was not the book.
+        x, y = block_for("ord-32-x"), block_for("ord-32-y")
+        ledgers = [
+            {"bindings": {}, "settled_orders": {}, 1: "note", "1": "other note"},
+            {"bindings": {x: {"order_id": "a", 7: "x"}}, "settled_orders": {"a": x}},
+            {"bindings": {}, "settled_orders": {}, "notes": [{None: "n"}]},
+            {"bindings": {}, "settled_orders": {}, True: "t"},
+        ]
+        for ledger in ledgers:
+            with self.assertRaises(BindingRefusal) as caught:
+                credit(ledger, block_hash=y, order_id="ord-32", block_info=info_for(),
+                       expect=expect_for("ord-32"), created_utc=NOW)
+            self.assertEqual("BAD_LEDGER", caught.exception.code, repr(ledger)[:60])
+        for kwargs in (dict(block_info=dict(info_for(), **{"x": 1}) | {2: "x"},
+                            expect=expect_for("ord-32")),
+                       dict(block_info=info_for(), expect=dict(expect_for("ord-32"), **{}) | {b"k": 1}),
+                       dict(block_info=dict(info_for(), contents={3: "c"}),
+                            expect=expect_for("ord-32"))):
+            with self.assertRaises(BindingRefusal) as caught:
+                credit(clean_ledger(), block_hash=y, order_id="ord-32", created_utc=NOW, **kwargs)
+            self.assertEqual("BAD_INPUT", caught.exception.code)
+        with self.assertRaises(BindingRefusal) as caught:
+            assign("ord-32", BASE, [{"order_id": "o", "tagged_raw": BASE, 5: "k"}],
+                   secret=SECRET, tag_raw_width=WIDTH)
+        self.assertEqual("BAD_LEDGER", caught.exception.code)
+
+    def test_33_readme_carries_the_migration_note(self):
+        with open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                               "README.md"), encoding="utf-8") as f:
+            readme = f.read()
+        self.assertIn("Migrating a book that already holds fold-equal order ids", readme)
+
     # -- repository conventions ---------------------------------------
 
     def test_14_self_test_is_green_and_codes_are_declared(self):

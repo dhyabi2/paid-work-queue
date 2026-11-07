@@ -1774,18 +1774,53 @@ What holds, each with a test that goes red without it:
   order id. One with leading or trailing whitespace (`"o1 "`) is `BAD_ORDER_ID`; one that
   differs from an already-settled order only by case or whitespace (`"O1"` after `"o1"`) is
   `ORDER_ALREADY_SETTLED`; and a book that records two such ids is `BAD_LEDGER`.
+- **`order_id` is ASCII, or it is refused.** A new id with any non-ASCII character is
+  `BAD_ORDER_ID` in `credit()`, `assign()` and `tag_offset()`. It is refused rather than
+  NFKC-normalised: normalising would credit an id the caller did not pass (fullwidth `Ｏ1`
+  as `O1`), and case-folding is not a safe twin test outside ASCII (`straße` and `STRASSE`
+  fold equal). Refusal is the fail-closed choice.
 - **Amounts are strict positive raw.** `block_info['amount']` and `expect['amount_raw']` must
   each be a string of ASCII digits with no sign, padding, `_` or leading zero, and not `"0"`;
   anything else is `AMOUNT_MISMATCH`.
+- **No amount is read past 39 digits.** A raw balance is at most 2^128 − 1, 39 digits. A longer
+  `amount`, `amount_raw` or `base_raw` is `BAD_INPUT`, and a longer `tagged_raw`, `base_raw` or
+  `probe` in the seller's own book is `BAD_LEDGER` — checked before `int()`, which past about
+  4300 digits raises a bare `ValueError` of its own.
 - **Every refusal has a code.** A non-dict `block_info` or `expect`, or a missing
   `created_utc`, is `BAD_INPUT`; a ledger that is not plain JSON (a set, bytes, a cycle) is
-  `BAD_LEDGER`. `credit()` raises nothing outside `REASON_CODES`.
+  `BAD_LEDGER`. A dict key that is not a `str`, at any depth, is `BAD_LEDGER` in the ledger or
+  an open invoice and `BAD_INPUT` in `block_info` or `expect`: the JSON copy would otherwise
+  turn `1` into `"1"` and silently merge two entries. `credit()` raises nothing outside
+  `REASON_CODES`.
 - **`block_info` is trusted to belong to `block_hash`.** A node's `block_info` response does not
   echo the hash it was asked about, so `credit()` cannot check it: the caller must fetch
   `block_info` for exactly that hash.
 - **`credit()` never consults `tagged_raw`.** The test asserts that over the function's own
   source, because the moment the credit path reads the amount as an identifier the whole rule
   is gone.
+
+### Migrating a book that already holds fold-equal order ids
+
+A book written before these rules may record two order ids that differ only by case or
+surrounding whitespace (`"O1"` and `"o1"`, or `"o1"` and `"o1 "`). `credit()` now refuses
+**every** credit against such a book with `BAD_LEDGER`, not only credits of those two orders:
+it cannot tell whether they are one order paid twice or two orders no reader can tell apart, and
+it will not guess. To use the book again, a person resolves each pair by hand: if both entries
+are one order, check on chain whether it was really paid twice and refund or record the
+duplicate outside `bindings`/`settled_orders`; if they are two orders, rename one to an id that
+no longer folds equal, keeping its block hash, in **both** `bindings` and `settled_orders`.
+Never delete an entry to make the error go away: that is how a settled order becomes payable
+again. A book that already records a non-ASCII id is still read (only new ids must be ASCII),
+and a new ASCII id that folds equal to it, such as `STRASSE` after `straße`, is
+`ORDER_ALREADY_SETTLED`. To find the pairs before upgrading:
+
+```
+python3 -c "
+import json, sys, collections; book = json.load(open(sys.argv[1])); seen = collections.defaultdict(set)
+for e in (book.get('bindings') or {}).values(): seen[str(e.get('order_id')).strip().casefold()].add(e.get('order_id'))
+for o in (book.get('settled_orders') or {}): seen[o.strip().casefold()].add(o)
+print([sorted(v) for v in seen.values() if len(v) > 1])" your-book.json
+```
 
 What this does **not** establish, stated here rather than left to be assumed: that the order
 described real work; that the delivery mark is honest; and **not payer identity** — any

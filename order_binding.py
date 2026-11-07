@@ -101,6 +101,11 @@ REASON_CODES = (
 )
 
 ORDER_ID_MAX = 128
+#: The longest amount string read, anywhere. A Nano balance is at most
+#: 2**128 - 1 raw, which is 39 decimal digits, so no real amount is longer.
+#: Past ~4300 digits `int()` itself raises a bare ValueError (CPython's
+#: int/str conversion limit), so the cap is checked BEFORE any int() call.
+RAW_DIGITS_MAX = 39
 SECRET_MIN_BYTES = 16
 TAG_WIDTH_MIN = 1024
 NETWORK = "nano:mainnet"
@@ -138,16 +143,55 @@ class BindingRefusal(Exception):
 
 def _check_order_id(order_id):
     """order_id is compared BYTE-EXACT, so it must arrive verbatim: a non-empty
-    str of at most ORDER_ID_MAX characters with no surrounding whitespace.
-    "o1 " is refused rather than quietly stripped, because a stripped and an
-    unstripped spelling would otherwise be two orders in the book."""
+    str of at most ORDER_ID_MAX characters, ASCII only, with no surrounding
+    whitespace. "o1 " is refused rather than quietly stripped, because a
+    stripped and an unstripped spelling would otherwise be two orders in the
+    book.
+
+    A non-ASCII id is REFUSED, not NFKC-normalised. Normalising would change
+    the id the caller passed (fullwidth "\uff2f1" would be credited as "O1"),
+    and casefold() is not a safe twin test outside ASCII ("STRASSE" and
+    "stra\u00dfe" fold equal; dotted and dotless i do not). Refusal is the
+    fail-closed choice: no two spellings of one id can both enter a book."""
     if (not isinstance(order_id, str) or not order_id or len(order_id) > ORDER_ID_MAX
-            or order_id != order_id.strip()):
+            or not order_id.isascii() or order_id != order_id.strip()):
         raise BindingRefusal(
             "BAD_ORDER_ID",
-            "order_id must be a non-empty str of at most %d characters with no "
+            "order_id must be a non-empty ASCII str of at most %d characters with no "
             "leading or trailing whitespace; got %r" % (ORDER_ID_MAX, order_id),
         )
+
+
+def _check_raw_length(value, code, what):
+    """Refuse an amount string longer than RAW_DIGITS_MAX before int() sees it."""
+    if isinstance(value, str) and len(value.strip()) > RAW_DIGITS_MAX:
+        raise BindingRefusal(
+            code, "%s is %d characters; an amount in raw is at most %d digits"
+            % (what, len(value.strip()), RAW_DIGITS_MAX))
+
+
+def _check_str_keys(value, code, what):
+    """Refuse any dict, at any depth, with a key that is not a str.
+
+    json.dumps() would quietly turn 1, True and None into "1", "true" and
+    "null", so {1: a, "1": b} would lose one entry on copy, and a book read
+    by key would not be the book written. Containers already seen are skipped,
+    so a cycle is left for the JSON copy to refuse."""
+    stack, seen = [value], set()
+    while stack:
+        item = stack.pop()
+        if not isinstance(item, (dict, list, tuple)) or id(item) in seen:
+            continue
+        seen.add(id(item))
+        if isinstance(item, dict):
+            for key, child in item.items():
+                if not isinstance(key, str):
+                    raise BindingRefusal(
+                        code, "%s holds a %s key %r; every key must be a str"
+                        % (what, type(key).__name__, key))
+                stack.append(child)
+        else:
+            stack.extend(item)
 
 
 def _order_fold(order_id):
@@ -198,6 +242,7 @@ def assign(order_id, base_raw, open_invoices, secret=None, tag_raw_width=None,
     back, unchanged, so calling this twice never puts two amounts in flight.
     """
     _check_order_id(order_id)
+    _check_raw_length(base_raw, "BAD_INPUT", "base_raw")
     if not isinstance(base_raw, str) or not _BASE_RAW_RE.match(base_raw):
         raise BindingRefusal(
             "AMOUNT_MISMATCH",
@@ -222,6 +267,7 @@ def assign(order_id, base_raw, open_invoices, secret=None, tag_raw_width=None,
         if not isinstance(invoice, dict):
             raise BindingRefusal("BAD_LEDGER", "every open invoice must be a dict; got %r"
                                  % (type(invoice).__name__,))
+        _check_str_keys(invoice, "BAD_LEDGER", "an open invoice")
         tagged = invoice.get("tagged_raw")
         if tagged is None or tagged == "":
             continue
@@ -296,11 +342,15 @@ def _ledger_int(value, what):
     if isinstance(value, int):
         number = value
     elif isinstance(value, str) and value.strip().isdigit() and value.strip().isascii():
+        _check_raw_length(value, "BAD_LEDGER", what)
         number = int(value.strip())
     else:
         raise BindingRefusal("BAD_LEDGER", "%s must be an integer; got %r" % (what, value))
     if number < 0:
         raise BindingRefusal("BAD_LEDGER", "%s must not be negative; got %r" % (what, value))
+    if number >= 10 ** RAW_DIGITS_MAX:
+        raise BindingRefusal(
+            "BAD_LEDGER", "%s is more than %d digits; no amount in raw is" % (what, RAW_DIGITS_MAX))
     return number
 
 
@@ -352,6 +402,9 @@ def credit(ledger, block_hash=None, order_id=None, block_info=None, expect=None,
         raise BindingRefusal(
             "BAD_INPUT", "created_utc must be a non-empty str; this module holds no clock")
     _check_order_id(order_id)
+    _check_str_keys(ledger, "BAD_LEDGER", "ledger")
+    _check_str_keys(block_info, "BAD_INPUT", "block_info")
+    _check_str_keys(expect, "BAD_INPUT", "expect")
 
     # 1. the hash, normalised then shape-checked
     if not isinstance(block_hash, str):
@@ -560,6 +613,8 @@ def credit(ledger, block_hash=None, order_id=None, block_info=None, expect=None,
     #    " 1000 ", "-1000" and "0", and a zero-raw "payment" pays nothing.
     raw_paid = block_info.get("amount")
     raw_wanted = expect.get("amount_raw")
+    _check_raw_length(raw_paid, "BAD_INPUT", "block_info['amount']")
+    _check_raw_length(raw_wanted, "BAD_INPUT", "expect['amount_raw']")
     if not all(isinstance(v, str) and _BASE_RAW_RE.match(v) for v in (raw_paid, raw_wanted)):
         raise BindingRefusal(
             "AMOUNT_MISMATCH",
