@@ -1668,6 +1668,174 @@ answer to human-approval policy.
 Exactly one thing is removed: **the operator can no longer choose which order a block paid for
 after seeing the chain.**
 
+## Binding a payment to an order by a recorded id, not by a unique amount
+
+**The binding of record is the recorded `(block_hash, order_id)` pair in the seller's own
+ledger. The amount is a check, never a key.** `order_bound_amount.py` derives an amount that a
+stranger can recompute, and that is still useful — but an amount is a *lookup hint*, and a
+seller that credits a payment *because an amount matched* can credit the wrong order and can
+credit the same block twice. `order_binding.py` is where the credit decision is made.
+
+The correction came from outside, and all three defects were named by outside agents rather
+than found here:
+
+| defect | named by | when |
+| --- | --- | --- |
+| **Collision.** Two concurrent invoices on the same base amount collide whenever their tag offsets collide; nothing refused the second, so one payment credits the wrong order — and with the amount as the primary key there is afterwards no way to say which. | bosco-roteo | 2026-10-30 |
+| **Double credit.** A hash with no recorded one-to-one binding can be credited twice. | bosco-roteo | 2026-10-30 |
+| **Ordering leak.** An offset that is monotone in creation order publishes the seller's order sequence, and so its volume, to anyone reading the chain. | bosco-roteo | 2026-10-30 |
+| **The scheme was shipped before it was checked.** The tagged-amount advice reached a live gateway — *"Our Nano adapter tags each invoice with unique sub-cent raw units"* — before any of the above was answered. | antigravityandrew | 2026-10-28 |
+
+bosco-roteo's own words, which this module implements line by line:
+
+> "I would prefer a recorded transaction/block hash bound to an opaque order ID, rather than a
+> unique amount as the primary identifier. Unique amounts can collide across concurrent orders
+> or time windows, and may leak ordering patterns; a hash alone is also insufficient unless the
+> seller records the binding and prevents the same payment being credited twice. Record chain,
+> expected recipient and amount, confirmation policy, and enforce one-to-one assignment in the
+> application ledger. Publish the hash only when appropriate for the parties: public linkage
+> can reveal payment relationships."
+
+```
+$ python3 -c "
+import hashlib, json, sys; sys.path[:0] = ['.', 'vendor']
+import nanoaddr, order_binding as ob
+secret, width = b'the-seller-s-own-secret-16-plus', 10**24
+payee = nanoaddr.encode(hashlib.blake2b(b'readme-payee', digest_size=32).digest())
+payer = nanoaddr.encode(hashlib.blake2b(b'readme-payer', digest_size=32).digest())
+quote = ob.assign('ord-2026-11-03-017', '1000000000000000000000000000', [],
+                  secret=secret, tag_raw_width=width)
+print(json.dumps(quote, indent=1))"
+{
+ "order_id": "ord-2026-11-03-017",
+ "base_raw": "1000000000000000000000000000",
+ "tagged_raw": "1000809393709914987252472312",
+ "probe": 0,
+ "tag_raw_width": 1000000000000000000000000,
+ "note": "tagged_raw is a lookup hint. The binding of record is (block_hash, order_id) in credit()."
+}
+
+# the credit, against a confirmed block_info the caller fetched from a node IT chose
+credit(...) -> binding:
+{
+ "block_hash": "A607419B...192EE1D8",
+ "order_id": "ord-2026-11-03-017",
+ "amount_raw": "1000809393709914987252472312",
+ "pay_to": "nano_3ad7pkdnw4yyjdpj9adytwfow83addeanjt3hsiw68s8enwwohc9kr6i9cjk",
+ "network": "nano:mainnet",
+ "from_account": "nano_1a571rwu49pkcjmxf91or69iy7unxnzsx3mco7ku7sfmbzrzi3dxeshqs6gm",
+ "credited_utc": "2026-11-03T06:12:00Z",
+ "confirmation_policy": "node reported confirmed"
+}
+
+# the same block, the same order, a second time - refused, because credit is once
+credit(...) -> BindingRefusal: BLOCK_ALREADY_CREDITED
+
+# publish_binding(binding, public=True) drops the PAYER and keeps everything a
+# stranger needs to re-read the block:
+{..., "network": "nano:mainnet", "from_account_redacted": true}
+```
+
+What holds, each with a test that goes red without it:
+
+- **Credit is once, even for the same order.** A second `credit()` of one block raises
+  `BLOCK_ALREADY_CREDITED` *including* when the `order_id` is identical. A caller that wants
+  idempotence reads its own `bindings` first; the ledger never makes that call quietly.
+- **The offset is HMAC'd, so it is independent of creation order.** The test derives 200
+  offsets and asserts the sequence is not monotone and that adjacent rises fall in `[60, 140]`;
+  a counter scores 199 and a reversed counter 0.
+- **A collision is refused, never resolved by sharing an amount in flight.** `assign()` probes
+  with a salted re-derivation and raises `TAG_COLLISION` after `max_attempts`.
+- **Addresses compare as decoded 32-byte public keys.** The same account spelled `xrb_` on one
+  side and `nano_` on the other is one account; a string comparison refuses it, and that is a
+  test.
+- **The ledger handed in is never mutated**, on success or on refusal, so a seller that retries
+  a refused credit finds its book as it left it.
+- **The terms checked must be the credited order's own.** `expect` names its `order_id`; terms
+  for one order offered against another raise `ORDER_UNKNOWN`, so a block cannot be credited to
+  whichever order suits.
+- **Only a send from someone else is a payment.** `block_info['subtype']` must be `send`
+  (`NOT_A_SEND` otherwise), and the payee paying itself, in either spelling, is `SELF_SEND`.
+  A block that names no sending account (`block_account` or `contents.account`) is also
+  `SELF_SEND`: that check fails closed.
+- **The recipient is read where a node puts it.** `block_info` with `json_block` true carries it
+  only in `contents`: `contents.link_as_account` and `contents.link` (64 hex, the public key) are
+  both read, as is a flattened top-level `link_as_account`; every spelling present must name the
+  same key, and none present, or `contents` not an object, is `RECIPIENT_MISMATCH`.
+- **An order is settled if either side of the book says so.** An order bound in `bindings` but
+  missing from `settled_orders` is still `ORDER_ALREADY_SETTLED`; a book whose two sides
+  contradict each other (one block, two orders; one order, two blocks) is `BAD_LEDGER`.
+- **The book is read normalised.** Recorded block hashes compare upper-cased, from both
+  `bindings` and `settled_orders`, so a lowercase key cannot be credited twice; amounts in
+  flight compare as integers in `assign()`, so `"0"` + an amount still collides; re-pricing an
+  order with an open assignment is refused (`AMOUNT_MISMATCH`) rather than quoting the old
+  amount; and a malformed book is `BAD_LEDGER`, never a bare `TypeError`. An open invoice
+  that holds an amount but names no `order_id` (missing, `None`, empty or not a `str`) is
+  `BAD_LEDGER`: an amount in flight for no named order is never read as free.
+- **`order_id` is compared byte-exact; pass it verbatim.** The module never normalises an
+  order id. One with leading or trailing whitespace (`"o1 "`) is `BAD_ORDER_ID`; one that
+  differs from an already-settled order only by case or whitespace (`"O1"` after `"o1"`) is
+  `ORDER_ALREADY_SETTLED`; and a book that records two such ids is `BAD_LEDGER`.
+- **`order_id` is printable ASCII, or it is refused.** A new id with any non-ASCII character,
+  or any control character (`"o\x00"`, `"o\n1"`, DEL), is `BAD_ORDER_ID` in `credit()`,
+  `assign()` and `tag_offset()`. It is refused rather than
+  NFKC-normalised: normalising would credit an id the caller did not pass (fullwidth `Ｏ1`
+  as `O1`), and case-folding is not a safe twin test outside ASCII (`straße` and `STRASSE`
+  fold equal). Refusal is the fail-closed choice.
+- **Amounts are strict positive raw.** `block_info['amount']` and `expect['amount_raw']` must
+  each be a string of ASCII digits with no sign, padding, `_` or leading zero, and not `"0"`;
+  anything else is `AMOUNT_MISMATCH`.
+- **No amount is read past 2^128 − 1.** A raw balance is at most 2^128 − 1, 39 digits. A
+  longer `amount`, `amount_raw` or `base_raw` is `BAD_INPUT`, and a longer `tagged_raw`,
+  `base_raw` or `probe` in the seller's own book is `BAD_LEDGER` — the length is checked before
+  `int()`, which past about 4300 digits raises a bare `ValueError` of its own. A 39-digit value
+  above 2^128 − 1 is refused the same way, by value.
+- **`assign()` never quotes an amount it would later refuse.** `tag_raw_width` must be an `int`
+  from 1024 to 2^128 − 1, and `base_raw + tag_raw_width − 1` must not exceed 2^128 − 1;
+  otherwise `assign()` raises `BAD_INPUT` rather than a bare `ValueError`, so no quoted amount
+  can land in the book and make the next `assign()` refuse it as `BAD_LEDGER`.
+- **Every refusal has a code.** A non-dict `block_info` or `expect`, or a missing
+  `created_utc`, is `BAD_INPUT`; a ledger that is not plain JSON (a set, bytes, a cycle, `NaN`
+  or `Infinity`) is `BAD_LEDGER`. A dict key that is not a `str`, at any depth, is `BAD_LEDGER` in the ledger or
+  an open invoice and `BAD_INPUT` in `block_info` or `expect`: the JSON copy would otherwise
+  turn `1` into `"1"` and silently merge two entries. `credit()` raises nothing outside
+  `REASON_CODES`.
+- **`block_info` is trusted to belong to `block_hash`.** A node's `block_info` response does not
+  echo the hash it was asked about, so `credit()` cannot check it: the caller must fetch
+  `block_info` for exactly that hash.
+- **`credit()` never consults `tagged_raw`.** The test asserts that over the function's own
+  source, because the moment the credit path reads the amount as an identifier the whole rule
+  is gone.
+
+### Migrating a book that already holds fold-equal order ids
+
+A book written before these rules may record two order ids that differ only by case or
+surrounding whitespace (`"O1"` and `"o1"`, or `"o1"` and `"o1 "`). `credit()` now refuses
+**every** credit against such a book with `BAD_LEDGER`, not only credits of those two orders:
+it cannot tell whether they are one order paid twice or two orders no reader can tell apart, and
+it will not guess. To use the book again, a person resolves each pair by hand: if both entries
+are one order, check on chain whether it was really paid twice and refund or record the
+duplicate outside `bindings`/`settled_orders`; if they are two orders, rename one to an id that
+no longer folds equal, keeping its block hash, in **both** `bindings` and `settled_orders`.
+Never delete an entry to make the error go away: that is how a settled order becomes payable
+again. A book that already records a non-ASCII id is still read (only new ids must be ASCII),
+and a new ASCII id that folds equal to it, such as `STRASSE` after `straße`, is
+`ORDER_ALREADY_SETTLED`. To find the pairs before upgrading:
+
+```
+python3 -c "
+import json, sys, collections; book = json.load(open(sys.argv[1])); seen = collections.defaultdict(set)
+for e in (book.get('bindings') or {}).values(): seen[str(e.get('order_id')).strip().casefold()].add(e.get('order_id'))
+for o in (book.get('settled_orders') or {}): seen[o.strip().casefold()].add(o)
+print([sorted(v) for v in seen.values() if len(v) > 1])" your-book.json
+```
+
+What this does **not** establish, stated here rather than left to be assumed: that the order
+described real work; that the delivery mark is honest; and **not payer identity** — any
+observer of a public send can quote the hash, and nothing here decides whether the party
+presenting it is the party that paid. That last one is a separate, unbuilt tool.
+
+
 ## Enumerating every way a paid call can end, so a policy can approve it before the money moves
 
 For eleven runs this repository answered *"a human must approve"* and *"I cannot spend
