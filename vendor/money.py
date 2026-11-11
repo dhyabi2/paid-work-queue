@@ -10,6 +10,15 @@ dependency of any kind, including on that one.
 
 RAW_PER_XNO = 10 ** 30
 
+# ASCII digits only. str.isdigit() is True for fullwidth "１", Arabic-Indic "١"
+# and superscript "²"; int() accepts the first two, so "１" priced as 1 XNO here
+# while every [0-9] port (nanoaddr-ts, board ask 617) refuses it.
+_DIGITS = __import__("re").compile(r"[0-9]+\Z")
+
+
+def _ascii_digits(text: str) -> bool:
+    return bool(_DIGITS.match(text))
+
 
 def xno_to_raw(amount: str) -> int:
     """Exact decimal XNO -> integer raw. No float is used anywhere."""
@@ -23,7 +32,7 @@ def xno_to_raw(amount: str) -> int:
         raise ValueError("amount is not a decimal number: %r" % amount)
     whole, _, frac = text.partition(".")
     whole = whole or "0"
-    if not whole.isdigit() or (frac and not frac.isdigit()):
+    if not _ascii_digits(whole) or (frac and not _ascii_digits(frac)):
         raise ValueError("amount is not a decimal number: %r" % amount)
     if len(frac) > 30:
         raise ValueError("Nano has 30 decimal places; %d were given" % len(frac))

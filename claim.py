@@ -64,7 +64,7 @@ def format_xno(raw_text, job_id="<unknown>"):
     rounding: an amount with a smaller unit than 10**24 raw renders in full
     rather than being truncated to a number that is not the price.
     """
-    if not isinstance(raw_text, str) or not raw_text.isdigit():
+    if not isinstance(raw_text, str) or not raw_text.isascii() or not raw_text.isdigit():
         raise Refused(
             EXIT_NO_FILE,
             "%s is malformed: 'price_raw' of %s is %r, which is not an integer "
