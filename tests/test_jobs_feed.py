@@ -92,11 +92,14 @@ class TheBoardAsPublished(unittest.TestCase):
 
     def test_01_the_feed_carries_all_three_jobs_and_the_real_total(self):
         """Built from the committed board, so the feed cannot drift from it."""
-        feed, _, _ = built(real_board())
-        # A claimed job is still published, but it is no longer open: the total counts the open ones only.
-        open_jobs = [job for job in real_board()["jobs"] if job.get("state") == "open"]
+        source = real_board()
+        feed, _, _ = built(source)
+        open_jobs = [j for j in source["jobs"]
+                     if j["state"] == "open" and j["expires"] > NOW]
+        open_raw = sum(int(j["price_raw"]) for j in open_jobs)
         self.assertEqual(feed["open_count"], len(open_jobs))
-        self.assertEqual(feed["open_total_raw"], str(sum(int(j["price_raw"]) for j in open_jobs)))
+        self.assertEqual(feed["open_total_raw"], str(open_raw))
+        self.assertEqual(feed["open_total_xno"], xno(open_raw))
         self.assertEqual([job["id"] for job in feed["jobs"]],
                          ["job-2026-09-26-001", "job-2026-09-26-002",
                           "job-2026-09-26-003"])
@@ -106,9 +109,12 @@ class TheBoardAsPublished(unittest.TestCase):
     def test_01b_the_total_is_the_exact_integer_sum(self):
         """0.25 + 0.15 + 0.05 is 0.45, not 0.44999999999999996."""
         feed, _, _ = built(real_board())
-        total = sum(int(job["price_raw"]) for job in feed["jobs"] if job["state"] == "open")
-        self.assertEqual(str(total), feed["open_total_raw"])
-        self.assertEqual(xno(total), feed["open_total_xno"])
+        total = sum(int(job["price_raw"]) for job in feed["jobs"])
+        open_total = sum(int(job["price_raw"]) for job in feed["jobs"]
+                         if job["state"] == "open")
+        self.assertEqual(str(open_total), feed["open_total_raw"])
+        self.assertEqual(xno(open_total), feed["open_total_xno"])
+        self.assertEqual(xno(total), "0.45")
 
     def test_01c_the_committed_feed_matches_the_committed_board(self):
         """The artefacts in `feed/` are generated, not hand-written.
@@ -453,9 +459,16 @@ class TheHumanPage(unittest.TestCase):
         with open(os.path.join(ROOT, "feed", "index.html"), "r",
                   encoding="utf-8") as fh:
             page = fh.read()
+        with open(os.path.join(ROOT, "feed", "jobs.json"), "r",
+                  encoding="utf-8") as fh:
+            published = json.load(fh)
         for forbidden in ("<script", "src=", 'href="http', "@import", "url("):
             self.assertNotIn(forbidden, page, forbidden)
         self.assertIn(xno(sum(int(j["price_raw"]) for j in real_board()["jobs"] if j.get("state") == "open")), page)
+        self.assertIn("%s XNO" % published["open_total_xno"], page)
+        for job in published["jobs"]:
+            if job["state"] != "open" and job["hours_left"] >= 0:
+                self.assertNotIn("expired %d hours ago" % job["hours_left"], page)
 
     def test_09d_a_title_carrying_html_is_escaped_not_rendered(self):
         feed, _, _ = built(board(title="<b>bold</b> & <script>alert(1)</script>"))
@@ -463,6 +476,25 @@ class TheHumanPage(unittest.TestCase):
         self.assertNotIn("<script", page)
         self.assertIn("&lt;script&gt;", page)
         self.assertIn("&amp;", page)
+
+    def test_09e_an_expired_job_with_nonnegative_hours_left_says_expired(self):
+        at_expiry, _, _ = built(board(), now="2026-10-17T07:00:00Z")
+        self.assertEqual(at_expiry["jobs"][0]["state"], "expired")
+        self.assertEqual(at_expiry["jobs"][0]["hours_left"], 0)
+        page_at_expiry = render_html(at_expiry)
+        self.assertIn("&middot; expired</span>", page_at_expiry)
+        self.assertNotIn("0 hours left", page_at_expiry)
+
+        operator_expired, _, _ = built(board(state="expired"), now=NOW)
+        self.assertEqual(operator_expired["jobs"][0]["state"], "expired")
+        self.assertGreater(operator_expired["jobs"][0]["hours_left"], 0)
+        page_op_expired = render_html(operator_expired)
+        self.assertIn("&middot; expired</span>", page_op_expired)
+        self.assertNotIn("hours left", page_op_expired)
+
+        past_expiry, _, _ = built(board(), now=AFTER_EXPIRY)
+        self.assertIn("expired %d hours ago" % abs(past_expiry["jobs"][0]["hours_left"]),
+                      render_html(past_expiry))
 
 
 class ByteExactAndHermetic(unittest.TestCase):
@@ -556,11 +588,13 @@ class ByteExactAndHermetic(unittest.TestCase):
             with open(os.path.join(out, "jobs.json"), "rb") as fh:
                 payload = fh.read()
             self.assertTrue(os.path.exists(os.path.join(out, "index.html")))
+        source = real_board()
+        open_jobs = [j for j in source["jobs"]
+                     if j["state"] == "open" and j["expires"] > NOW]
+        open_raw = sum(int(j["price_raw"]) for j in open_jobs)
         self.assertEqual(reference["bytes"], len(payload))
-        open_jobs = [job for job in real_board()["jobs"] if job.get("state") == "open"]
         self.assertEqual(reference["open_count"], len(open_jobs))
-        self.assertEqual(reference["open_total_xno"],
-                         xno(sum(int(j["price_raw"]) for j in open_jobs)))
+        self.assertEqual(reference["open_total_xno"], xno(open_raw))
         self.assertEqual(reference["expiring_within_72h"], 0)
         self.assertEqual(reference["jobs_digest"],
                          joined(json.loads(payload.decode())["jobs_digest_halves"]))
